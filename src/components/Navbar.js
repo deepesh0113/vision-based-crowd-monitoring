@@ -1,33 +1,3 @@
-// import React from 'react';
-// import { Link } from 'react-router-dom';
-
-// function Navbar() {
-//   return (
-//     <div className="header">
-//       <div className="header-left">
-//         <Link to="/" className="logo-link">
-//           <img src="/logo.png" alt="VigilNet Logo" className="logo-img" />
-//           <div className="logo-text-group">
-//             <div className="logo-text">VigilNet</div>
-//             <div className="tagline">Real-time crowd monitoring & alerts</div>
-//           </div>
-//         </Link>
-//       </div>
-//       <div className="header-right">
-//         <Link to="/">Home</Link>
-//         <Link to="/login">Login</Link>
-//         <Link to="/signup">Signup</Link>
-//         <Link to="/login">Dashboard</Link>
-//         <Link to="/reports">Reports</Link>
-//         <Link to="/contact">Contact</Link>
-//         <Link to="/faq">FAQ</Link>
-//       </div>
-//     </div>
-//   );
-// }
-
-// export default Navbar;
-
 
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
@@ -63,9 +33,8 @@ function Navbar() {
       </div>
       <div className={`navbar-links${menuOpen ? " open" : ""}`}>
         <Link to="/" onClick={handleLinkClick}>Home</Link>
-        <Link to="/login" onClick={handleLinkClick}>Login</Link>
-        <Link to="/signup" onClick={handleLinkClick}>Signup</Link>
-        <Link to="/login" onClick={handleLinkClick}>Dashboard</Link>
+        <Link to="/main_page" onClick={handleLinkClick}>Analysis</Link>
+        <Link to="/crowd_count_photo" onClick={handleLinkClick}>CCPhoto</Link>
         <Link to="/reports" onClick={handleLinkClick}>Reports</Link>
         <Link to="/contact" onClick={handleLinkClick}>Contact</Link>
         <Link to="/faq" onClick={handleLinkClick}>FAQ</Link>

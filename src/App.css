@@ -1,4 +1,4 @@
-
+/* 
 
 :root {
   --background-dark: #0a0a0a;
@@ -80,70 +80,6 @@ a {
 }
 
 
-/* 
-.intro-screen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: var(--background-dark);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-direction: column;
-}
-
-.intro-video {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0.3;
-}
-
-.intro-content {
-  position: relative;
-  text-align: center;
-}
-
-.intro-content h1 {
-  font-size: 2.5rem;
-  margin-bottom: 20px;
-  color: #ffffff;
-  text-shadow: 0 0 10px rgba(0, 150, 255, 0.5),
-    0 0 20px rgba(0, 120, 255, 0.4),
-    0 0 30px rgba(0, 80, 200, 0.3);
-  transition: text-shadow 0.3s ease, transform 0.3s ease;
-}
-
-.intro-content h1:hover {
-  text-shadow: 0 0 12px rgba(50, 170, 255, 0.6),
-    0 0 25px rgba(50, 140, 255, 0.5),
-    0 0 35px rgba(50, 120, 255, 0.4);
-  transform: scale(1.02);
-}
-
-.btn {
-  background-color: var(--primary-blue);
-  color: var(--accent-light);
-  border: none;
-  padding: 12px 30px;
-  border-radius: 30px;
-  cursor: pointer;
-  font-size: 1rem;
-  box-shadow: 0 0 6px rgba(0, 100, 255, 0.2); 
-  transition: all 0.3s ease;
-}
-
-.btn:hover {
-  background-color: #1f5fa8;
-  box-shadow: 0 0 8px rgba(0, 160, 255, 0.4),  
-    0 0 15px rgba(0, 130, 255, 0.3),  
-    0 0 20px rgba(0, 110, 255, 0.2); 
-  transform: translateY(-1px);  
-} */
-
 .intro-screen {
   position: fixed;
   top: 0; left: 0;
@@ -154,7 +90,7 @@ a {
   justify-content: center;
   align-items: center;
   flex-direction: column;
-  overflow: hidden; /* Prevent scrollbars from video overflow */
+  overflow: hidden; 
   z-index: 100;
 }
 
@@ -165,7 +101,7 @@ a {
   height: 100vh;
   object-fit: cover;
   opacity: 0.32;
-  pointer-events: none; /* So video doesn't block interaction */
+  pointer-events: none; 
   z-index: 1;
 }
 
@@ -218,7 +154,7 @@ a {
   transform: translateY(-1px);  
 }
 
-/* Responsive styles */
+
 @media (max-width: 700px) {
   .intro-screen {
     padding: 0 3vw;
@@ -236,6 +172,7 @@ a {
     font-size: 1.38rem;
     margin-bottom: 14px;
     line-height: 1.18;
+    align-items: center;
   }
   .btn {
     padding: 9px 18px;
@@ -248,6 +185,8 @@ a {
   .intro-content h1 {
     font-size: 1.02rem;
     margin-bottom: 9px;
+    align-items: center;
+    margin-top: 50%;
   }
   .btn {
     padding: 7px 12px;
@@ -427,9 +366,7 @@ a {
 }
 
 .feature-card {
-  /* background: rgba(30, 144, 255, 0.08); */
   background: #000;
-  /* border: 1px solid #1e90ff; */
   border-radius: 20px;
   width: 260px;
   padding: 20px;
@@ -541,7 +478,6 @@ a {
 
 .feature-item {
   background: rgba(0, 0, 0, 0.08);
-  /* border: 1px solid #1e90ff; */
   border-radius: 20px;
   padding: 30px 20px;
   transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
@@ -637,122 +573,6 @@ a {
   }
 }
 
-/* 
-@media (max-width: 700px) {
-  .header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 12px 10px;
-  }
-  .header-right {
-    width: 100%;
-    flex-direction: column;
-    gap: 8px;
-    align-items: flex-start;
-  }
-  .logo-text-group {
-    margin-left: 6px;
-  }
-  .logo-text {
-    font-size: 1.1rem;
-  }
-  .tagline {
-    font-size: 0.69rem;
-  }
-  .intro-content h1 {
-    font-size: 1.3rem;
-  }
-  .btn {
-    padding: 9px 18px;
-    font-size: 0.96rem;
-  }
-  .top-section {
-    flex-direction: column;
-    gap: 15px;
-    padding: 14px 2vw;
-  }
-  .stats-container {
-    flex-direction: column;
-    gap: 10px;
-  }
-  .stat-card {
-    width: 95vw;
-  }
-  .feature-card, .feature-item {
-    width: 95vw;
-    padding: 16px 8px;
-  }
-  .feature-grid {
-    grid-template-columns: 1fr;
-  }
-  .latest-news h2,
-  .key-features h2 {
-    font-size: 1.4rem;
-  }
-  .latest-news>p,
-  .key-features>p {
-    font-size: 1rem;
-    max-width: 98vw;
-  }
-  .news-headlines {
-    padding: 14px 1vw;
-    max-width: 98vw;
-  }
-  .camera-section,
-  .camera-container {
-    padding: 10px 3vw;
-    max-width: 99vw;
-  }
-  .camera-video {
-    border-radius: 8px;
-  }
-}
-
-
-@media (max-width: 410px) {
-  .logo-text {
-    font-size: 0.92rem;
-  }
-  .feature-card,
-  .feature-item,
-  .stat-card {
-    width: 99vw;
-    padding: 8px 1vw;
-  }
-  .news-headlines {
-    font-size: 0.92rem;
-    padding: 8px 0.5vw;
-  }
-  .latest-news>p,
-  .key-features>p {
-    font-size: 0.97rem;
-  }
-}
-
-.page-flex-wrapper {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.footer-bottom {
-  text-align: center;
-  color: #bbb;
-  font-size: 1.04rem;
-  margin-top: 38px;
-  padding: 12px 0;
-}
-
-
-.page-flex-wrapper > *:first-child {
-  flex: 1 0 auto;
-}
- */
-
- /* Extra Responsive Additions for Forms, Cards, Uploads, etc. */
-
-/* Main form/page container responsiveness */
 
 @media (max-width: 700px) {
   .header {
@@ -886,7 +706,7 @@ a {
   box-sizing: border-box;
 }
 
-/* Utility: Center images/cards/buttons */
+
 @media (max-width: 700px) {
   .center-on-mobile {
     display: flex !important;
@@ -937,7 +757,7 @@ a {
   }
 }
 
-/* For extra small screens */
+
 @media (max-width: 410px) {
   .integrations {
     padding: 10px 2vw;
@@ -965,9 +785,8 @@ a {
   box-sizing: border-box;
 }
 
-/* Stick footer to bottom if content is short, but allow scrolling for tall content */
 .page-flex-wrapper {
-  min-height: 50vh;
+  min-height: 10vh;
   display: flex;
   flex-direction: column;
 }
@@ -975,7 +794,7 @@ a {
   flex: 1 0 auto;
 }
 
-/* Responsive — make footer a bit tighter, larger font, and always readable on mobile */
+
 @media (max-width: 700px) {
   .footer {
     font-size: 1rem;
@@ -990,5 +809,524 @@ a {
     font-size: 0.96rem;
     padding: 10px 0 6px 0;
     margin-top: 18px;
+  }
+} */
+
+
+:root {
+  --background-dark: #020617;
+  --card-dark: #020617;
+  --primary-blue: #2563eb;
+  --accent-light: #e5e7eb;
+  --accent-grey: #9ca3af;
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  background-color: var(--background-dark);
+  color: var(--accent-light);
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ------------- INTRO SCREEN ------------- */
+
+.home-page {
+  min-height: 100vh;
+  background-color: var(--background-dark);
+}
+
+.intro-screen {
+  position: fixed;
+  inset: 0;
+  background-color: var(--background-dark);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 100;
+}
+
+.intro-video {
+  position: absolute;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  object-fit: cover;
+  opacity: 0.28;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.intro-content {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  width: 100%;
+  max-width: 96vw;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.intro-title {
+  font-size: 2.4rem;
+  margin-bottom: 18px;
+  color: #ffffff;
+  text-shadow: 0 0 20px rgba(37, 99, 235, 0.7);
+}
+
+.btn.intro-btn {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #f9fafb;
+  border: none;
+  padding: 11px 26px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 1rem;
+  box-shadow: 0 18px 40px rgba(37, 99, 235, 0.55);
+  transition: background 0.2s ease, transform 0.1s ease,
+    box-shadow 0.2s ease;
+}
+
+.btn.intro-btn:hover {
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
+  transform: translateY(-1px);
+  box-shadow: 0 22px 50px rgba(37, 99, 235, 0.7);
+}
+
+@media (max-width: 700px) {
+  .intro-title {
+    font-size: 1.6rem;
+  }
+  .btn.intro-btn {
+    padding: 9px 20px;
+    font-size: 0.95rem;
+  }
+}
+
+/* ------------- MAIN LAYOUT ------------- */
+
+.home-layout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80px 16px 40px;
+}
+
+/* HERO ROW */
+
+.hero-row {
+  display: flex;
+  width: 100%;
+  max-width: 1120px;
+  gap: 18px;
+  margin-bottom: 40px;
+  flex-wrap: wrap;
+}
+
+.hero-left,
+.hero-right {
+  flex: 1;
+  min-width: 280px;
+}
+
+.hero-right {
+  display: flex;
+  justify-content: center;
+}
+
+/* DESCRIPTION CARD – NO HEAVY BORDER */
+
+.description-card {
+  background: radial-gradient(circle at top left, #0b1120, #020617 60%);
+  border-radius: 18px;
+  padding: 22px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.9);
+}
+
+.description-text h1 {
+  font-size: 1.6rem;
+  margin-bottom: 8px;
+  color: var(--accent-light);
+}
+
+.description-text p {
+  font-size: 0.95rem;
+  color: var(--accent-grey);
+  line-height: 1.7;
+}
+
+/* STATS */
+
+.stats-grid {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  background: linear-gradient(145deg, #020617, #020617);
+  border-radius: 14px;
+  padding: 12px 14px;
+  min-width: 120px;
+  text-align: left;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.9);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 24px 50px rgba(15, 23, 42, 1);
+}
+
+.stat-card strong {
+  font-size: 1.25rem;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.stat-card p {
+  font-size: 0.85rem;
+  color: var(--accent-grey);
+}
+
+/* HERO LINKS */
+
+.hero-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.hero-link-btn {
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #f9fafb;
+  font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: 0 18px 40px rgba(37, 99, 235, 0.6);
+}
+
+/* CAMERA CARD – CLEAN, ONLY SHADOW */
+
+.camera-card {
+  background: radial-gradient(circle at top, #020617, #020617 70%);
+  border-radius: 18px;
+  padding: 14px 14px 16px;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.95);
+}
+
+.camera-video {
+  width: 100%;
+  height: auto;
+  border-radius: 14px;
+  object-fit: cover;
+  margin-bottom: 10px;
+}
+
+.camera-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.camera-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.density-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background-color: #020617;
+  font-size: 0.8rem;
+}
+
+.density-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.density-label {
+  text-transform: capitalize;
+}
+
+.camera-online {
+  font-size: 0.8rem;
+  color: #4ade80;
+}
+
+.camera-details p {
+  margin: 2px 0;
+  font-size: 0.85rem;
+  color: var(--accent-grey);
+}
+
+.camera-details .label {
+  color: #9ca3af;
+}
+
+/* ------------- SECTIONS GENERIC ------------- */
+
+.section-block {
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto 40px;
+}
+
+.section-header {
+  text-align: left;
+  margin-bottom: 18px;
+}
+
+.section-header h2 {
+  font-size: 1.45rem;
+  color: #e5e7eb;
+}
+
+.section-header p {
+  font-size: 0.95rem;
+  color: var(--accent-grey);
+  max-width: 640px;
+}
+
+/* ------------- LATEST NEWS ------------- */
+
+.latest-news {
+  background-color: transparent;
+}
+
+.news-card-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 26px;
+}
+
+.news-card {
+  background: linear-gradient(145deg, #020617, #020617);
+  border-radius: 16px;
+  width: 250px;
+  max-width: 100%;
+  padding: 14px;
+  cursor: pointer;
+  box-shadow: 0 22px 50px rgba(15, 23, 42, 0.9);
+  transition: transform 0.15s ease, box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.news-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 1);
+  background: radial-gradient(circle at top left, #0b1120, #020617 65%);
+}
+
+.news-card img {
+  width: 100%;
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+
+.news-card h3 {
+  font-size: 1rem;
+  margin-bottom: 6px;
+  color: #e5e7eb;
+}
+
+.news-summary {
+  font-size: 0.9rem;
+  color: var(--accent-grey);
+}
+
+.news-details-card {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background-color: #020617;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.9);
+  font-size: 0.9rem;
+  color: #d1d5db;
+}
+
+/* Headlines list – no hard borders */
+
+.news-headlines {
+  margin-top: 10px;
+  padding-top: 14px;
+}
+
+.news-headlines h3 {
+  font-size: 1.1rem;
+  margin-bottom: 10px;
+  color: #bfdbfe;
+}
+
+.news-headlines ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.news-headlines li {
+  margin-bottom: 14px;
+}
+
+.headline-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.95rem;
+  color: #60a5fa;
+  cursor: pointer;
+  text-align: left;
+}
+
+.headline-btn:hover {
+  text-decoration: underline;
+}
+
+.headline-details {
+  margin-top: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  background-color: #020617;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.9);
+  font-size: 0.9rem;
+  color: #d1d5db;
+}
+
+/* ------------- KEY FEATURES ------------- */
+
+.key-features {
+  background-color: transparent;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+  margin-bottom: 26px;
+}
+
+.feature-card-iit {
+  background: linear-gradient(145deg, #020617, #020617);
+  border-radius: 18px;
+  padding: 18px 16px;
+  cursor: pointer;
+  box-shadow: 0 22px 50px rgba(15, 23, 42, 0.95);
+  transition: transform 0.15s ease, box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.feature-card-iit:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 1);
+  background: radial-gradient(circle at top, #0b1120, #020617 60%);
+}
+
+.feature-icon {
+  display: inline-block;
+  font-size: 1.7rem;
+  margin-bottom: 8px;
+}
+
+.feature-card-iit h3 {
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+  color: #e5e7eb;
+}
+
+.feature-summary {
+  font-size: 0.9rem;
+  color: var(--accent-grey);
+}
+
+.feature-details {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background-color: #020617;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.9);
+  font-size: 0.9rem;
+  color: #d1d5db;
+}
+
+/* Integrations – chips with no border, just pill bg */
+
+.integrations {
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.integrations h3 {
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+  color: #bfdbfe;
+}
+
+.integrations p {
+  font-size: 0.9rem;
+  color: var(--accent-grey);
+  max-width: 620px;
+}
+
+.integration-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.integration-tags span {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  color: #bfdbfe;
+  background-color: #020617;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.9);
+}
+
+/* ------------- RESPONSIVE ------------- */
+
+@media (max-width: 900px) {
+  .hero-row {
+    flex-direction: column;
+  }
+  .hero-right {
+    order: -1;
+  }
+}
+
+@media (max-width: 700px) {
+  .home-layout {
+    padding: 72px 10px 30px;
+  }
+  .description-text h1 {
+    font-size: 1.35rem;
+  }
+  .stats-grid {
+    flex-direction: column;
+  }
+  .news-card {
+    width: 100%;
   }
 }
