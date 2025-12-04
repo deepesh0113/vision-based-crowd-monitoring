@@ -1,85 +1,172 @@
-import os
-from flask import Flask, request, jsonify, send_from_directory, abort
-from werkzeug.utils import secure_filename
-from ultralytics import YOLO
-from pdf2image import convert_from_bytes
-import cv2
-import numpy as np
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+import pandas as pd
+from io import BytesIO
 
-app = Flask(__name__)
+app = FastAPI()
 
-UPLOAD_FOLDER = './uploads'
-RESULT_FOLDER = './results'
-ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'pdf'}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],      # for local dev; restrict in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['RESULT_FOLDER'] = RESULT_FOLDER
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(RESULT_FOLDER, exist_ok=True)
 
-model = YOLO('yolov8n.pt')
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def process_pdf_to_video(pdf_bytes, output_path):
-    # Convert PDF pages to images
-    images = convert_from_bytes(pdf_bytes, fmt="jpeg")
-    if not images:
-        raise IOError("No images extracted from PDF")
-    
-    # Set frame size and video writer
-    frame = np.array(images[0])
-    height, width, _ = frame.shape
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    fps = 1  # 1 frame per second (can be changed)
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-
-    for img in images:
-        frame = np.array(img)
-        # YOLO detection
-        results = model(frame)
-        annotated_frame = results[0].plot()
-        out.write(annotated_frame)
-    out.release()
-
-@app.route('/process_pdf/', methods=['POST'])
-def upload_and_process_pdf():
-    if 'pdf' not in request.files:
-        return jsonify({'error': 'No PDF uploaded'}), 400
-    file = request.files['pdf']
-    if file.filename == '':
-        return jsonify({'error': 'Empty filename'}), 400
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type'}), 400
-
-    filename = secure_filename(file.filename)
-    input_filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(input_filepath)
-
-    output_filename = 'output_' + filename.rsplit('.', 1)[0] + '.mp4'
-    output_filepath = os.path.join(app.config['RESULT_FOLDER'], output_filename)
-
+def convert_timestamp_ns_to_seconds(ts_str):
+    """
+    Supports:
+    1) 'MM:SS:MS'  -> '00:00:400'
+    2) raw integer nanoseconds -> 400000000 (0.4 sec)
+    """
     try:
-        with open(input_filepath, 'rb') as pdf_file:
-            pdf_bytes = pdf_file.read()
-            process_pdf_to_video(pdf_bytes, output_filepath)
+        s = str(ts_str).strip()
+
+        # Case 1: "MM:SS:MS"
+        if ":" in s:
+            parts = s.split(":")
+            # "MM:SS:MS"
+            if len(parts) == 3:
+                minutes = int(parts[0])
+                seconds = int(parts[1])
+                millis = int(parts[2])
+                total_seconds = minutes * 60 + seconds + millis / 1000.0
+                return total_seconds
+            # "MM:SS"
+            if len(parts) == 2:
+                minutes = int(parts[0])
+                seconds = int(parts[1])
+                return minutes * 60 + seconds
+            # anything else: fail
+            return None
+
+        # Case 2: plain number -> treat as nanoseconds
+        # e.g. 400000000 -> 0.4 sec
+        val = float(s)
+        # if it's very small (< 1e6) maybe it's already seconds or ms,
+        # but since column is timestamp_ns, we assume nanoseconds:
+        return val / 1e9
+
     except Exception as e:
-        return jsonify({'error': 'Processing failed', 'message': str(e)}), 500
+        print("Timestamp parse error for:", ts_str, "->", e)
+        return None
 
-    return jsonify({'output_video': f'/download_output?path={output_filename}'})
 
-@app.route('/download_output')
-def download_output():
-    path = request.args.get('path')
-    if not path:
-        abort(400, 'Missing path parameter')
-    if '..' in path or path.startswith('/'):
-        abort(400, 'Invalid path parameter')
-    full_path = os.path.join(app.config['RESULT_FOLDER'], path)
-    if not os.path.exists(full_path):
-        abort(404, 'File not found')
-    return send_from_directory(app.config['RESULT_FOLDER'], path)
+@app.post("/upload-csv")
+async def upload_csv(file: UploadFile = File(...)):
+    """
+    CSV must contain: date, timestamp_ns, frame_index, count
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000, debug=True)
+    Returns JSON:
+      - records      -> [{ date, timestamp, count }]
+      - time_series  -> [{ date, time_sec, count }]
+      - per_second   -> [{ date, second, avg_count }]
+      - frame_series -> [{ date, frame_index, count }]
+      - summary      -> stats
+    """
+    try:
+        raw = await file.read()
+
+        # --- Read CSV into DataFrame ---
+        try:
+            df = pd.read_csv(BytesIO(raw))
+        except Exception as e:
+            print("Pandas read_csv error:", e)
+            return {
+                "status": "error",
+                "message": f"Failed to read CSV: {e}",
+                "records": [],
+            }
+
+        print("CSV columns:", list(df.columns))
+
+        required_cols = {"date", "timestamp_ns", "frame_index", "count"}
+        if not required_cols.issubset(df.columns):
+            return {
+                "status": "error",
+                "message": (
+                    "CSV must contain columns: "
+                    "date, timestamp_ns, frame_index, count"
+                ),
+                "records": [],
+            }
+
+        # Normalize types
+        df["date"] = df["date"].astype(str)
+
+        # Convert timestamp_ns -> seconds using robust parser
+        df["time_sec"] = df["timestamp_ns"].apply(convert_timestamp_ns_to_seconds)
+
+        # Check if *all* conversions failed
+        if df["time_sec"].isna().all():
+            return {
+                "status": "error",
+                "message": (
+                    "No valid rows after timestamp conversion. "
+                    "Ensure 'timestamp_ns' is either 'MM:SS:MS' (e.g. 00:00:400) "
+                    "or a numeric nanoseconds value (e.g. 400000000)."
+                ),
+                "records": [],
+            }
+
+        # Drop only rows that failed; keep others
+        df = df.dropna(subset=["time_sec"])
+
+        # ---------- 1) time series: (date, time_sec, count) ----------
+        time_series_df = df[["date", "time_sec", "count"]].copy()
+        time_series = time_series_df.to_dict(orient="records")
+
+        # ---------- 2) per-second average, grouped by (date, sec_bucket) ----------
+        df["sec_bucket"] = df["time_sec"].astype(int)
+        per_second_df = (
+            df.groupby(["date", "sec_bucket"])["count"]
+            .mean()
+            .reset_index()
+            .rename(columns={"sec_bucket": "second", "count": "avg_count"})
+        )
+        per_second = per_second_df.to_dict(orient="records")
+
+        # ---------- 3) frame_index vs count, with date ----------
+        frame_series_df = df[["date", "frame_index", "count"]].copy()
+        frame_series = frame_series_df.to_dict(orient="records")
+
+        # ---------- Summary stats over all rows ----------
+        summary = {
+            "min_count": float(df["count"].min()),
+            "max_count": float(df["count"].max()),
+            "mean_count": float(df["count"].mean()),
+            "num_points": int(len(df)),
+        }
+
+        # ---------- records: what Dashboard.js uses for main time-series ----------
+        # Each record: { date, timestamp, count }
+        records = [
+            {
+                "date": row["date"],
+                "timestamp": float(row["time_sec"]),
+                "count": float(row["count"]),
+            }
+            for _, row in time_series_df.iterrows()
+        ]
+
+        response = {
+            "status": "success",
+            "records": records,
+            "time_series": time_series,
+            "per_second": per_second,
+            "frame_series": frame_series,
+            "summary": summary,
+        }
+
+        print("Processed rows:", len(records))
+        return response
+
+    except Exception as e:
+        # This catches any unexpected errors and still returns JSON
+        print("Unexpected server error:", e)
+        return {
+            "status": "error",
+            "message": f"Failed to process CSV: {e}",
+            "records": [],
+        }
