@@ -12,8 +12,8 @@ import torch.nn.functional as F
 
 # ---------------- USER SETTINGS ----------------
 MODEL_PATH = "crowd_counting.pth"
-VIDEO_IN   = "low_light_video.mp4"
-OUT_CSV    = "low_light_count_after_enhancement.csv"
+VIDEO_IN   = "camera_hinderance.mp4"
+OUT_CSV    = "output_with_hinderance.csv"
 
 USE_GPU = True                      # use CUDA if available
 USE_FP16_IF_CUDA = True             # use float16 if using CUDA (speeds inference)
@@ -23,13 +23,109 @@ SMOOTH_WINDOW = 3                   # moving average window for display (0 or 1 
 QUEUE_MAXSIZE = 6                   # frame queue size for reader thread
 FLUSH_INTERVAL = 2.0                # seconds between CSV flushes
 PRINT_EVERY = 50                    # print progress every N processed frames
-UPSAMPLE_DMAP = True        # True = upsample density map to original feed size then sum (best)
-SCALE_BY_AREA = False       # True = multiply sum by area ratio (cheaper)
+UPSAMPLE_DMAP = False        # True = upsample density map to original feed size then sum (best)
+SCALE_BY_AREA = True       # True = multiply sum by area ratio (cheaper)
 # If UPSAMPLE_DMAP is True, SCALE_BY_AREA is ignored.
 # ------------------------------------------------
 
 device = torch.device("cuda" if (USE_GPU and torch.cuda.is_available()) else "cpu")
 print("Device:", device)
+
+# --- camera hinderance detection helpers ---
+
+# Counters to require consecutive frames before raising an alert
+_hinder_counters = {
+    "frozen": 0,
+    "covered": 0,
+    "low_contrast": 0,
+    "obstructed": 0
+}
+
+# thresholds
+FROZEN_DIFF_THRESH = 2.0        # mean absolute diff (grayscale) below this => nearly identical
+FROZEN_FRAMES_THRESH = 5       # consecutive frames to mark frozen
+COVERED_MEAN_THRESH = 15       # grayscale mean below this => likely lens covered
+COVERED_FRAMES_THRESH = 3
+LOW_CONTRAST_STD_THRESH = 10.0 # grayscale std below this => low contrast
+LOW_CONTRAST_FRAMES_THRESH = 5
+OBSTRUCT_EDGE_DENSITY_THRESH = 0.005  # very few edges => obstruction / large uniform area
+OBSTRUCT_FRAMES_THRESH = 5
+DARK_PCT_THRESH = 0.50         # >= 50% pixels very dark => hindered
+
+_prev_gray_for_hinder = None
+
+def check_camera_hinder(frame_bgr):
+    """
+    Inspect frame and update internal counters. Returns (is_hindered: bool, reason: str).
+    Uses simple signals: frozen frame, covered (very dark + low std), low contrast, obstructed (very few edges).
+    This is conservative — counters prevent false positives from one-off frames.
+    """
+    global _prev_gray_for_hinder, _hinder_counters
+
+    # convert to grayscale
+    gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+    mean = float(gray.mean())
+    std = float(gray.std())
+
+    # difference vs previous frame (useful to detect frozen camera)
+    diff_mean = None
+    if _prev_gray_for_hinder is None:
+        diff_mean = 255.0  # big number so first frame doesn't look frozen
+    else:
+        diff = cv2.absdiff(gray, _prev_gray_for_hinder)
+        diff_mean = float(diff.mean())
+
+    # edge density (Canny)
+    edges = cv2.Canny(gray, 50, 150)
+    edge_density = float(np.mean(edges > 0))  # fraction of edge pixels
+
+    # fraction of very dark pixels
+    dark_pct = float(np.mean(gray < 30))
+
+    # --- checks ---
+    # frozen
+    if diff_mean < FROZEN_DIFF_THRESH:
+        _hinder_counters["frozen"] += 1
+    else:
+        _hinder_counters["frozen"] = 0
+
+    # covered (very dark overall)
+    if mean < COVERED_MEAN_THRESH and std < LOW_CONTRAST_STD_THRESH:
+        _hinder_counters["covered"] += 1
+    else:
+        _hinder_counters["covered"] = 0
+
+    # low contrast
+    if std < LOW_CONTRAST_STD_THRESH:
+        _hinder_counters["low_contrast"] += 1
+    else:
+        _hinder_counters["low_contrast"] = 0
+
+    # obstructed (very few edges OR large dark region)
+    if edge_density < OBSTRUCT_EDGE_DENSITY_THRESH or dark_pct >= DARK_PCT_THRESH:
+        _hinder_counters["obstructed"] += 1
+    else:
+        _hinder_counters["obstructed"] = 0
+
+    # decide final alert
+    reason = ""
+    if _hinder_counters["frozen"] >= FROZEN_FRAMES_THRESH:
+        reason = "camera_frozen"
+    elif _hinder_counters["covered"] >= COVERED_FRAMES_THRESH:
+        reason = "lens_covered_or_extremely_dark"
+    elif _hinder_counters["obstructed"] >= OBSTRUCT_FRAMES_THRESH:
+        reason = "obstructed_or_low_edge_density"
+    elif _hinder_counters["low_contrast"] >= LOW_CONTRAST_FRAMES_THRESH:
+        reason = "low_contrast"
+
+    # update previous
+    _prev_gray_for_hinder = gray.copy()
+
+    return (bool(reason), reason, {
+        "mean": mean, "std": std, "diff_mean": diff_mean,
+        "edge_density": edge_density, "dark_pct": dark_pct,
+        "counters": dict(_hinder_counters)
+    })
 
 def enhance_frame(frame_bgr,
                   gamma=1.6,
@@ -214,7 +310,7 @@ reader.start()
 
 csv_file = open(OUT_CSV, 'w', newline='', buffering=1)
 writer = csv.writer(csv_file)
-writer.writerow(['timestamp_ms', 'frame_index', 'count'])  # header
+writer.writerow(['timestamp_ms', 'frame_index', 'count', 'alert'])  # header
 
 smoother = []
 processed = 0
@@ -300,9 +396,16 @@ with torch.no_grad():
 
         # write to CSV: timestamp in ms, frame index, count
         time_str = ms_to_time_str(t_ms)
-        writer.writerow([time_str, processed, f"{display_count:.3f}"])
 
-        # writer.writerow([int(t_ms), processed, f"{display_count:.3f}"])
+        # check camera hinderance on raw frame (before enhancement)
+        is_hindered, reason, dbg = check_camera_hinder(frame)
+
+        alert_field = reason if is_hindered else ""
+
+        if(is_hindered):
+            display_count = 0.00
+
+        writer.writerow([time_str, processed, f"{display_count:.3f}", alert_field])
 
         processed += 1
 
