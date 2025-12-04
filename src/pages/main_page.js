@@ -473,14 +473,14 @@ function MainPage({ user }) {
         cameras: [
           {
             id: baseCamId + 1,
-            name: `Camera ${newPairId} - Real`,
+            name: `Camera ${newPairId}`,
             src: "",
             on: true,
             uploadedFile: null,
           },
           {
             id: baseCamId + 2,
-            name: `Camera ${newPairId}b - Crowd CSV`,
+            name: `Crowd Log ${newPairId}`,
             src: "",
             on: true,
             uploadedFile: null,
@@ -799,7 +799,7 @@ function MainPage({ user }) {
       </div>
 
       <button style={styles.addCameraBtn} onClick={addCameraPair}>
-        + Add Camera Pair
+        + Add New Feed
       </button>
 
       <div style={styles.buttonRow}>
