@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import CsvViewer from "../components/CsvViewer";
 
 const API_BASE = "http://localhost:8000"; // backend URL
 
@@ -693,10 +694,11 @@ function MainPage({ user }) {
                                 </button>
                               </div>
 
-                              <pre style={styles.csvContent}>
-                                {crowdTxtMap[pair.pairId] ||
-                                  "Upload a video on the left to stream output_with_hinderance.csv from backend."}
-                              </pre>
+                              <CsvViewer
+                                csvText={crowdTxtMap[pair.pairId]}
+                                fallbackMessage="Upload a video on the left to stream output_with_hinderance.csv from backend."
+                                styleOverride={styles.csvContent}
+                              />
                             </div>
 
                           )
