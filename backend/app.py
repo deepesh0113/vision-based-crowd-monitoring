@@ -81,7 +81,7 @@ def preprocess_pil_image(pil_image: Image.Image, size: Tuple[int, int]) -> torch
     return T.Compose([T.Resize(size), T.ToTensor()])(pil_image).unsqueeze(0)
 
 # -- FastAPI setup --
-CHECKPOINT_PATH = "./crowd_counting.pth"
+CHECKPOINT_PATH = "./crowd_photo.pth"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 IMAGE_SIZE = (512, 512)
 ALLOWED_ORIGINS = [
@@ -91,7 +91,8 @@ ALLOWED_ORIGINS = [
 model = MC_CNN()
 model = load_checkpoint_safe(CHECKPOINT_PATH, model, DEVICE)
 
-app = FastAPI()
+# app = FastAPI()
+app = FastAPI(title="Photo Crowdcount API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,

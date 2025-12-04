@@ -609,10 +609,15 @@ function Dashboard() {
     setLoading(true);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/upload-csv", {
+      // const res = await fetch("http://127.0.0.1:8000/upload-csv", {
+      //   method: "POST",
+      //   body: formData,
+      // });
+      const res = await fetch("http://127.0.0.1:8000/dashboard/upload-csv", {
         method: "POST",
         body: formData,
       });
+
 
       const data = await res.json();
 
@@ -925,7 +930,17 @@ function Dashboard() {
                   <br />
                   Or<br />
                   <code>date, timestamp_ns, frame_index, count, alert</code>
+                  <br /><br />
+
+                  {/* Legend additions */}
+                  <span style={{ color: "#a855f7", fontWeight: "bold" }}>●</span>
+                  &nbsp;violet dot = lens_covered_or_extremely_dark
+                  <br />
+
+                  <span style={{ color: "#f97316", fontWeight: "bold" }}>●</span>
+                  &nbsp;orange dot = camera_frozen
                 </div>
+
 
 
 

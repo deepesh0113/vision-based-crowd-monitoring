@@ -328,9 +328,17 @@ function CrowdCountPhoto() {
 
   const styles = getStyles(isMobile, theme);
 
+  // const API_BASE = "http://127.0.0.1:8000";
+  // const API_ENDPOINT = `${API_BASE}/crowdcount`;
+  // const OPENAPI_URL = `${API_BASE}/openapi.json`;
   const API_BASE = "http://127.0.0.1:8000";
-  const API_ENDPOINT = `${API_BASE}/crowdcount`;
-  const OPENAPI_URL = `${API_BASE}/openapi.json`;
+
+// crowdcount route from app.py, now under /photo
+const API_ENDPOINT = `${API_BASE}/photo/crowdcount`;
+
+// OpenAPI for *this* sub-app is now /photo/openapi.json
+const OPENAPI_URL = `${API_BASE}/photo/openapi.json`;
+
 
   useEffect(() => {
     return () => {
@@ -760,7 +768,7 @@ function CrowdCountPhoto() {
                         ? countResult.roundedDiv10.toLocaleString()
                         : "Not available"}
                     </div>
-                    <div style={{ ...styles.resultValue, marginTop: 4 }}>
+                    {/* <div style={{ ...styles.resultValue, marginTop: 4 }}>
                       Estimated (raw):{" "}
                       {countResult.rawDiv10 !== null
                         ? countResult.rawDiv10.toFixed(2)
@@ -771,7 +779,7 @@ function CrowdCountPhoto() {
                         Model confidence:{" "}
                         {countResult.confidence.toFixed(1)}%
                       </div>
-                    )}
+                    )} */}
                   </div>
                 )}
               </div>

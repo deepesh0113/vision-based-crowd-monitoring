@@ -4,6 +4,10 @@ import time
 import threading
 import csv
 from datetime import datetime
+from io import StringIO
+import tempfile
+
+
 
 
 import cv2
@@ -241,33 +245,195 @@ def ms_to_time_str(t_ms):
     return f"{minutes:02d}:{seconds:02d}:{ms:03d}"
 
 
-# ---------- per-run tracking ----------
-RUNS = {}  # run_id -> {"csv_path": str, "done": bool}
+# # ---------- per-run tracking (in-memory CSV, no file on disk) ----------
+# RUNS = {}  # run_id -> {"csv": str, "done": bool}
+# RUNS_LOCK = threading.Lock()
+
+
+# def process_video_to_csv(video_path: str, run_id: str):
+#     """
+#     Process video, compute crowd counts, and build a CSV string in memory.
+#     No CSV file is saved to disk.
+#     """
+#     global _hinder_counters, _prev_gray_for_hinder
+#     _hinder_counters = {k: 0 for k in _hinder_counters}
+#     _prev_gray_for_hinder = None
+
+#     # in-memory CSV buffer
+#     buf = StringIO()
+#     writer = csv.writer(buf)
+
+#     # today's date in yyyy-mm-dd format
+#     today_str = datetime.now().strftime("%Y-%m-%d")
+
+#     # header
+#     writer.writerow(["date", "timestamp_ms", "frame_index", "count", "alert"])
+
+#     cap = cv2.VideoCapture(video_path)
+#     if not cap.isOpened():
+#         print("Cannot open video:", video_path)
+#         # still store at least header
+#         with RUNS_LOCK:
+#             RUNS[run_id]["csv"] = buf.getvalue()
+#             RUNS[run_id]["done"] = True
+#         return
+
+#     smoother = []
+#     processed = 0
+#     last_flush = time.time()
+#     start_wall = time.time()
+
+#     with torch.no_grad():
+#         while True:
+#             ok, frame = cap.read()
+#             if not ok:
+#                 print("End of video reached.")
+#                 break
+
+#             if processed % SKIP_FRAMES != 0:
+#                 processed += 1
+#                 continue
+
+#             enhanced = enhance_frame(frame, gamma=1.6, use_clahe=True, denoise=False)
+#             inp = frame_to_tensor(enhanced)
+
+#             out = model(inp)
+#             out_f = out.float() if (device.type == "cuda" and USE_FP16_IF_CUDA) else out
+#             out_f = torch.relu(out_f)
+#             dmap = out_f.squeeze(0).squeeze(0)
+
+#             orig_h, orig_w = frame.shape[:2]
+#             if FRAME_RESIZE is not None:
+#                 feed_w, feed_h = FRAME_RESIZE
+#             else:
+#                 feed_h, feed_w = inp.shape[2], inp.shape[3]
+
+#             if UPSAMPLE_DMAP:
+#                 dmap_unsq = dmap.unsqueeze(0).unsqueeze(0)
+#                 dmap_up = F.interpolate(
+#                     dmap_unsq,
+#                     size=(orig_h, orig_w),
+#                     mode="bilinear",
+#                     align_corners=False,
+#                 )
+#                 dmap_up = dmap_up.squeeze(0).squeeze(0)
+#                 count_val = float(dmap_up.sum().item())
+#             elif SCALE_BY_AREA:
+#                 raw_count = float(dmap.sum().item())
+#                 scale = (orig_h * orig_w) / (feed_h * feed_w)
+#                 count_val = raw_count * scale
+#             else:
+#                 count_val = float(dmap.sum().item())
+
+#             if SMOOTH_WINDOW and SMOOTH_WINDOW > 1:
+#                 smoother.append(count_val)
+#                 if len(smoother) > SMOOTH_WINDOW:
+#                     smoother.pop(0)
+#                 display_count = sum(smoother) / len(smoother)
+#             else:
+#                 display_count = count_val
+
+#             t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
+#             time_str = ms_to_time_str(t_ms)
+
+#             is_hindered, reason = check_camera_hinder(frame)
+#             alert_field = reason if is_hindered else ""
+#             if is_hindered:
+#                 display_count = 0.0
+
+#             writer.writerow([
+#                 today_str,              # date (yyyy-mm-dd)
+#                 time_str,               # timestamp_ms (mm:ss:ms string)
+#                 processed,              # frame_index
+#                 f"{display_count:.3f}", # count
+#                 alert_field             # alert
+#             ])
+
+#             processed += 1
+
+#             if processed % PRINT_EVERY == 0:
+#                 elapsed = time.time() - start_wall
+#                 fps_eff = processed / elapsed if elapsed > 0 else 0
+#                 print(
+#                     f"Processed {processed} frames (effective FPS: {fps_eff:.2f}), "
+#                     f"last count {display_count:.2f}"
+#                 )
+
+#     cap.release()
+#     csv_text = buf.getvalue()
+#     buf.close()
+
+#     with RUNS_LOCK:
+#         RUNS[run_id]["csv"] = csv_text
+#         RUNS[run_id]["done"] = True
+
+#     try:
+#         os.remove(video_path)
+#     except OSError:
+#         pass
+
+#     print("Finished. Stored CSV in memory for run_id:", run_id)
+
+
+# def run_processing(video_path: str, run_id: str):
+#     with RUNS_LOCK:
+#         RUNS[run_id]["done"] = False
+
+#     process_video_to_csv(video_path, run_id)
+
+
+# def run_processing(video_path: str, run_id: str):
+#     csv_path = None
+#     with RUNS_LOCK:
+#         csv_path = RUNS[run_id]["csv_path"]
+#         RUNS[run_id]["done"] = False
+
+#     process_video_to_csv(video_path, csv_path)
+
+#     with RUNS_LOCK:
+#         RUNS[run_id]["done"] = True
+
+#     try:
+#         os.remove(video_path)
+#     except OSError:
+#         pass
+
+
+# ---------- per-run tracking (in-memory CSV, no file on disk) ----------
+RUNS = {}  # run_id -> {"csv": str, "done": bool}
 RUNS_LOCK = threading.Lock()
 
 
-def process_video_to_csv(video_path: str, out_csv_path: str):
+def process_video_to_csv(video_path: str, run_id: str):
+    """
+    Process video, compute crowd counts, and build a CSV string in memory.
+    No CSV file is saved to disk.
+    """
     global _hinder_counters, _prev_gray_for_hinder
     _hinder_counters = {k: 0 for k in _hinder_counters}
     _prev_gray_for_hinder = None
 
+    # in-memory CSV buffer
+    buf = StringIO()
+    writer = csv.writer(buf)
+
+    # today's date in yyyy-mm-dd format
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # header
+    writer.writerow(["date", "timestamp_ms", "frame_index", "count", "alert"])
+
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print("Cannot open video:", video_path)
+        # still store at least header
+        with RUNS_LOCK:
+            RUNS[run_id]["csv"] = buf.getvalue()
+            RUNS[run_id]["done"] = True
         return
-
-    csv_file = open(out_csv_path, "w", newline="", buffering=1)
-    writer = csv.writer(csv_file)
-
-    # 👉 today's date in yyyy-mm-dd format
-    today_str = datetime.now().strftime("%Y-%m-%d")
-
-    # 👉 updated header with date first
-    writer.writerow(["date", "timestamp_ms", "frame_index", "count", "alert"])
 
     smoother = []
     processed = 0
-    last_flush = time.time()
     start_wall = time.time()
 
     with torch.no_grad():
@@ -328,7 +494,6 @@ def process_video_to_csv(video_path: str, out_csv_path: str):
             if is_hindered:
                 display_count = 0.0
 
-            # 👉 write date as first column now
             writer.writerow([
                 today_str,              # date (yyyy-mm-dd)
                 time_str,               # timestamp_ms (mm:ss:ms string)
@@ -339,10 +504,6 @@ def process_video_to_csv(video_path: str, out_csv_path: str):
 
             processed += 1
 
-            if time.time() - last_flush > FLUSH_INTERVAL:
-                csv_file.flush()
-                last_flush = time.time()
-
             if processed % PRINT_EVERY == 0:
                 elapsed = time.time() - start_wall
                 fps_eff = processed / elapsed if elapsed > 0 else 0
@@ -351,23 +512,27 @@ def process_video_to_csv(video_path: str, out_csv_path: str):
                     f"last count {display_count:.2f}"
                 )
 
-    csv_file.flush()
-    csv_file.close()
     cap.release()
-    print("Finished. Wrote counts to:", out_csv_path)
+    csv_text = buf.getvalue()
+    buf.close()
+
+    with RUNS_LOCK:
+        RUNS[run_id]["csv"] = csv_text
+        RUNS[run_id]["done"] = True
+
+    print("Finished. Stored CSV in memory for run_id:", run_id)
 
 
 def run_processing(video_path: str, run_id: str):
-    csv_path = None
+    """
+    Wrapper used by BackgroundTasks.
+    """
     with RUNS_LOCK:
-        csv_path = RUNS[run_id]["csv_path"]
         RUNS[run_id]["done"] = False
 
-    process_video_to_csv(video_path, csv_path)
+    process_video_to_csv(video_path, run_id)
 
-    with RUNS_LOCK:
-        RUNS[run_id]["done"] = True
-
+    # Remove temp video file if it still exists
     try:
         os.remove(video_path)
     except OSError:
@@ -375,8 +540,46 @@ def run_processing(video_path: str, run_id: str):
 
 
 # ---------- FastAPI ----------
-app = FastAPI()
+# app = FastAPI()
+# app = FastAPI(title="Video Analytics API")
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
+
+# @app.post("/process_video/")
+# async def process_video(
+#     background_tasks: BackgroundTasks,              # <-- no default, comes first
+#     video: UploadFile = File(...),                 # <-- name "video" to match frontend
+# ):
+#     # unique id per upload
+#     run_id = str(int(time.time() * 1000))
+#     video_filename = f"uploaded_{run_id}.mp4"
+#     video_path = os.path.join(BASE_DIR, video_filename)
+#     csv_path = os.path.join(BASE_DIR, f"output_with_hinderance_{run_id}.csv")
+
+#     # save video
+#     with open(video_path, "wb") as f:
+#         while True:
+#             chunk = await video.read(1024 * 1024)
+#             if not chunk:
+#                 break
+#             f.write(chunk)
+
+#     with RUNS_LOCK:
+#         RUNS[run_id] = {"csv_path": csv_path, "done": False}
+
+#     # run processing in background
+#     background_tasks.add_task(run_processing, video_path, run_id)
+
+#     return {"status": "processing_started", "run_id": run_id}
+
+# ---------- FastAPI ----------
+app = FastAPI(title="Video Analytics API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -388,47 +591,70 @@ app.add_middleware(
 
 @app.post("/process_video/")
 async def process_video(
-    background_tasks: BackgroundTasks,              # <-- no default, comes first
-    video: UploadFile = File(...),                 # <-- name "video" to match frontend
+    background_tasks: BackgroundTasks,
+    video: UploadFile = File(...),
 ):
     # unique id per upload
     run_id = str(int(time.time() * 1000))
-    video_filename = f"uploaded_{run_id}.mp4"
-    video_path = os.path.join(BASE_DIR, video_filename)
-    csv_path = os.path.join(BASE_DIR, f"output_with_hinderance_{run_id}.csv")
 
-    # save video
-    with open(video_path, "wb") as f:
+    print(f"[process_video] run_id={run_id}")
+
+    # create a temporary file (NOT in your backend folder)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+        temp_video_path = tmp.name
+        print(f"[process_video] writing temp video to: {temp_video_path}")
+
         while True:
             chunk = await video.read(1024 * 1024)
             if not chunk:
                 break
-            f.write(chunk)
+            tmp.write(chunk)
 
+    # initialize run entry in memory
     with RUNS_LOCK:
-        RUNS[run_id] = {"csv_path": csv_path, "done": False}
+        RUNS[run_id] = {"csv": "", "done": False}
 
     # run processing in background
-    background_tasks.add_task(run_processing, video_path, run_id)
+    background_tasks.add_task(run_processing, temp_video_path, run_id)
 
     return {"status": "processing_started", "run_id": run_id}
 
+# @app.get("/crowd_txt/")
+# async def crowd_txt(run_id: str = Query(...)):
+#     with RUNS_LOCK:
+#         run_info = RUNS.get(run_id)
 
-@app.get("/crowd_txt/")
-async def crowd_txt(run_id: str = Query(...)):
+#     if not run_info:
+#         return JSONResponse({"csv": "", "done": True})
+
+#     csv_path = run_info["csv_path"]
+#     done = run_info["done"]
+
+#     if not os.path.exists(csv_path):
+#         return JSONResponse({"csv": "", "done": done})
+
+#     with open(csv_path, "r", encoding="utf-8") as f:
+#         csv_text = f.read()
+
+#     return JSONResponse({"csv": csv_text, "done": done})
+
+
+@app.get("/crowd_txt/{run_id}")
+async def crowd_txt(run_id: str):
+    """
+    Frontend calls: GET /analytics/crowd_txt/{run_id}
+    We return the CSV text (from memory) + done flag.
+    """
     with RUNS_LOCK:
         run_info = RUNS.get(run_id)
 
     if not run_info:
+        # unknown run_id
         return JSONResponse({"csv": "", "done": True})
 
-    csv_path = run_info["csv_path"]
-    done = run_info["done"]
-
-    if not os.path.exists(csv_path):
-        return JSONResponse({"csv": "", "done": done})
-
-    with open(csv_path, "r", encoding="utf-8") as f:
-        csv_text = f.read()
+    csv_text = run_info.get("csv", "")
+    done = run_info.get("done", False)
 
     return JSONResponse({"csv": csv_text, "done": done})
+
+

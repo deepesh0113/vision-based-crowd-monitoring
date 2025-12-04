@@ -425,89 +425,96 @@ Date,Timestamp_ns,Frame_index,Count,Alert
 
   // Upload + live CSV polling
   const uploadVideoFile = async (pairId, cameraId, file) => {
-  if (!file) return;
+    if (!file) return;
 
-  const formData = new FormData();
-  formData.append("video", file); // 👈 MUST be "video" to match backend
+    const formData = new FormData();
+    formData.append("video", file); // 👈 MUST be "video" to match backend
 
-  // show video immediately on left
-  setCameraPairs((pairs) =>
-    pairs.map((pair) =>
-      pair.pairId === pairId
-        ? {
+    // show video immediately on left
+    setCameraPairs((pairs) =>
+      pairs.map((pair) =>
+        pair.pairId === pairId
+          ? {
             ...pair,
             cameras: pair.cameras.map((cam) =>
               cam.id === cameraId
                 ? {
-                    ...cam,
-                    src: URL.createObjectURL(file),
-                    uploadedFile: file,
-                  }
+                  ...cam,
+                  src: URL.createObjectURL(file),
+                  uploadedFile: file,
+                }
                 : cam
             ),
           }
-        : pair
-    )
-  );
+          : pair
+      )
+    );
 
-  let runId;
-  try {
-    const res = await fetch(`${API_BASE}/process_video/`, {
-      method: "POST",
-      body: formData,
-    });
-    if (!res.ok) {
-      console.error("process_video failed:", res.status, await res.text());
-      return;
-    }
-    const data = await res.json();
-    runId = data.run_id;
-    if (!runId) {
-      console.error("No run_id returned from backend:", data);
-      return;
-    }
-  } catch (err) {
-    console.error("Error starting processing:", err);
-    return;
-  }
-
-  // stop old poller for this pair
-  if (pollTimers[pairId]) {
-    clearInterval(pollTimers[pairId]);
-  }
-
-  let intervalId;
-
-  const poll = () => {
-    fetch(`${API_BASE}/crowd_txt/?run_id=${encodeURIComponent(runId)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!data) return;
-        const { csv, done } = data;
-
-        setCrowdTxtMap((prev) => ({
-          ...prev,
-          [pairId]: csv || "",
-        }));
-
-        if (done && intervalId) {
-          clearInterval(intervalId);
-          setPollTimers((prev) => {
-            const copy = { ...prev };
-            delete copy[pairId];
-            return copy;
-          });
-        }
-      })
-      .catch((err) => {
-        console.error("Error fetching crowd_txt:", err);
+    let runId;
+    try {
+      // const res = await fetch(`${API_BASE}/process_video/`, {
+      //   method: "POST",
+      //   body: formData,
+      // });
+      const res = await fetch(`${API_BASE}/analytics/process_video/`, {
+        method: "POST",
+        body: formData,
       });
-  };
 
-  intervalId = setInterval(poll, 500);
-  setPollTimers((prev) => ({ ...prev, [pairId]: intervalId }));
-  poll(); // first immediate call
-};
+      if (!res.ok) {
+        console.error("process_video failed:", res.status, await res.text());
+        return;
+      }
+      const data = await res.json();
+      runId = data.run_id;
+      if (!runId) {
+        console.error("No run_id returned from backend:", data);
+        return;
+      }
+    } catch (err) {
+      console.error("Error starting processing:", err);
+      return;
+    }
+
+    // stop old poller for this pair
+    if (pollTimers[pairId]) {
+      clearInterval(pollTimers[pairId]);
+    }
+
+    let intervalId;
+
+    const poll = () => {
+      // fetch(`${API_BASE}/analytics/crowd_txt/?run_id=${encodeURIComponent(runId)}`)
+      fetch(`${API_BASE}/analytics/crowd_txt/${encodeURIComponent(runId)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (!data) return;
+          const { csv, done } = data;
+          setCrowdTxtMap((prev) => ({
+            ...prev,
+            [pairId]: csv || "",
+          }));
+
+          if (done && intervalId) {
+            clearInterval(intervalId);
+            setPollTimers((prev) => {
+              const copy = { ...prev };
+              delete copy[pairId];
+              return copy;
+            });
+          }
+        })
+        .catch((err) => {
+          console.error("Error fetching crowd_txt:", err);
+        });
+    };
+
+
+
+    intervalId = setInterval(poll, 500);
+    setPollTimers((prev) => ({ ...prev, [pairId]: intervalId }));
+    poll(); // first immediate call
+  };
 
 
   const addCameraPair = () => {
