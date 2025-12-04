@@ -230,7 +230,7 @@ def process_video_to_csv(video_path: str, run_id: str):
     buf = StringIO()
     writer = csv.writer(buf)
     today_str = datetime.now().strftime("%Y-%m-%d")
-    writer.writerow(["date", "timestamp_ms", "frame_index", "count", "alert"])
+    writer.writerow(["date", "timestamp_ms", "count", "alert"])
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -320,7 +320,6 @@ def process_video_to_csv(video_path: str, run_id: str):
             writer.writerow([
                 today_str,
                 time_str,
-                processed,
                 f"{display_count:.3f}",
                 alert_field
             ])
