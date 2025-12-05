@@ -21,8 +21,6 @@ function MainPage({ user }) {
   const systemSettingsRef = useRef(null);
 
   const [selectedSystemCamera, setSelectedSystemCamera] = useState("");
-  // const [uploadedVideoURL, setUploadedVideoURL] = useState(null);
-  const [uploadedVideoFile, setUploadedVideoFile] = useState(null);
 
   const [crowdTxtMap, setCrowdTxtMap] = useState({});
   const [pollTimers, setPollTimers] = useState({});
@@ -283,32 +281,10 @@ function MainPage({ user }) {
       marginBottom: 10,
       fontSize: 13,
     },
-    downloadBtn: {
-      padding: "4px 10px",
-      fontSize: 11,
-      borderRadius: 999,
-      border: "1px solid #4b5563",
-      backgroundColor: "#020617",
-      color: "#ef1111ff",
-      cursor: "pointer",
-      marginLeft: 8,
-      whiteSpace: "nowrap",
-      opacity: 0.9,
-    },
-    downloadBtnDisabled: {
-      opacity: 0.4,
-      cursor: "not-allowed",
-    },
-
   };
 
-  const [cameraPairs, setCameraPairs] = useState([
-    {
-      pairId: 0,
-      cameras: [
-      ],
-    },
-  ]);
+  // Start with no pairs; user clicks "+ Add New Feed"
+  const [cameraPairs, setCameraPairs] = useState([]);
 
   const [availableCameras] = useState([
     "Integrated Webcam",
@@ -339,11 +315,11 @@ function MainPage({ user }) {
       pairs.map((pair) =>
         pair.pairId === pairId
           ? {
-            ...pair,
-            cameras: pair.cameras.map((cam) =>
-              cam.id === cameraId ? { ...cam, on: !cam.on } : cam
-            ),
-          }
+              ...pair,
+              cameras: pair.cameras.map((cam) =>
+                cam.id === cameraId ? { ...cam, on: !cam.on } : cam
+              ),
+            }
           : pair
       )
     );
@@ -354,11 +330,11 @@ function MainPage({ user }) {
       pairs.map((pair) =>
         pair.pairId === pairId
           ? {
-            ...pair,
-            cameras: pair.cameras.map((cam) =>
-              cam.id === cameraId ? { ...cam, name: newName } : cam
-            ),
-          }
+              ...pair,
+              cameras: pair.cameras.map((cam) =>
+                cam.id === cameraId ? { ...cam, name: newName } : cam
+              ),
+            }
           : pair
       )
     );
@@ -369,38 +345,34 @@ function MainPage({ user }) {
     if (!file) return;
 
     const formData = new FormData();
-    formData.append("video", file); // 👈 MUST be "video" to match backend
+    formData.append("video", file); // MUST be "video" to match backend
 
     // show video immediately on left
     setCameraPairs((pairs) =>
       pairs.map((pair) =>
         pair.pairId === pairId
           ? {
-            ...pair,
-            cameras: pair.cameras.map((cam) =>
-              cam.id === cameraId
-                ? {
-                  ...cam,
-                  src: URL.createObjectURL(file),
-                  uploadedFile: file,
-                }
-                : cam
-            ),
-          }
+              ...pair,
+              cameras: pair.cameras.map((cam) =>
+                cam.id === cameraId
+                  ? {
+                      ...cam,
+                      src: URL.createObjectURL(file),
+                      uploadedFile: file,
+                    }
+                  : cam
+              ),
+            }
           : pair
       )
     );
 
     let runId;
     try {
-      // const res = await fetch(`${API_BASE}/process_video/`, {
-      //   method: "POST",
-      //   body: formData,
-      // });
       const res = await fetch(`${API_BASE}/analytics/process_video/`, {
-        method: "POST",
-        body: formData,
-      });
+  method: "POST",
+  body: formData,
+});
 
       if (!res.ok) {
         console.error("process_video failed:", res.status, await res.text());
@@ -425,7 +397,7 @@ function MainPage({ user }) {
     let intervalId;
 
     const poll = () => {
-      // fetch(`${API_BASE}/analytics/crowd_txt/?run_id=${encodeURIComponent(runId)}`)
+      //  fetch(`${API_BASE}/analytics/crowd_txt/?run_id=${encodeURIComponent(runId)}`)
       fetch(`${API_BASE}/analytics/crowd_txt/${encodeURIComponent(runId)}`)
         .then((r) => r.json())
         .then((data) => {
@@ -450,13 +422,10 @@ function MainPage({ user }) {
         });
     };
 
-
-
     intervalId = setInterval(poll, 500);
     setPollTimers((prev) => ({ ...prev, [pairId]: intervalId }));
     poll(); // first immediate call
   };
-
 
   const addCameraPair = () => {
     const newPairId = cameraPairs.length
@@ -466,6 +435,8 @@ function MainPage({ user }) {
       (max, pair) => Math.max(max, ...pair.cameras.map((c) => c.id)),
       0
     );
+    const leftId = baseCamId + 1;
+    const rightId = baseCamId + 2;
 
     setCameraPairs((prev) => [
       ...prev,
@@ -473,18 +444,20 @@ function MainPage({ user }) {
         pairId: newPairId,
         cameras: [
           {
-            id: baseCamId + 1,
+            id: leftId,
             name: `Camera ${newPairId}`,
             src: "",
             on: true,
             uploadedFile: null,
+            role: "real", // left card: video + upload
           },
           {
-            id: baseCamId + 2,
+            id: rightId,
             name: `Crowd Log ${newPairId}`,
             src: "",
             on: true,
             uploadedFile: null,
+            role: "csv", // right card: CSV only
           },
         ],
       },
@@ -492,8 +465,6 @@ function MainPage({ user }) {
   };
 
   const deleteCameraPair = (pairId) => {
-    if (pairId === 0) return;
-
     // stop polling for this pair
     if (pollTimers[pairId]) {
       clearInterval(pollTimers[pairId]);
@@ -517,6 +488,12 @@ function MainPage({ user }) {
     const newPairId = cameraPairs.length
       ? cameraPairs[cameraPairs.length - 1].pairId + 1
       : 1;
+    const baseCamId = cameraPairs.reduce(
+      (max, pair) => Math.max(max, ...pair.cameras.map((c) => c.id)),
+      0
+    );
+    const leftId = baseCamId + 1;
+    const rightId = baseCamId + 2;
 
     setCameraPairs((prev) => [
       ...prev,
@@ -524,18 +501,20 @@ function MainPage({ user }) {
         pairId: newPairId,
         cameras: [
           {
-            id: newPairId * 2 - 1,
+            id: leftId,
             name: `${selectedSystemCamera} - Real`,
             src: "",
             on: true,
             uploadedFile: null,
+            role: "real",
           },
           {
-            id: newPairId * 2,
-            name: `${selectedSystemCamera}b - Crowd CSV`,
+            id: rightId,
+            name: `${selectedSystemCamera} - Crowd Log`,
             src: "",
             on: true,
             uploadedFile: null,
+            role: "csv",
           },
         ],
       },
@@ -544,51 +523,6 @@ function MainPage({ user }) {
     setSystemSettingsOpen(false);
   };
 
-  // const addUploadedVideo = () => {
-  //   if (!uploadedVideoFile) return;
-
-  //   const newPairId = cameraPairs.length
-  //     ? cameraPairs[cameraPairs.length - 1].pairId + 1
-  //     : 1;
-  //   const baseCamId = cameraPairs.reduce(
-  //     (max, pair) => Math.max(max, ...pair.cameras.map((c) => c.id)),
-  //     0
-  //   );
-  //   const leftCamId = baseCamId + 1;
-  //   const rightCamId = baseCamId + 2;
-
-  //   setCameraPairs((prev) => [
-  //     ...prev,
-  //     {
-  //       pairId: newPairId,
-  //       cameras: [
-  //         {
-  //           id: leftCamId,
-  //           name: `Uploaded Video ${newPairId} - Real`,
-  //           src: "",
-  //           on: true,
-  //           uploadedFile: null,
-  //         },
-  //         {
-  //           id: rightCamId,
-  //           name: `Uploaded Video ${newPairId}b - Crowd CSV`,
-  //           src: "",
-  //           on: true,
-  //           uploadedFile: null,
-  //         },
-  //       ],
-  //     },
-  //   ]);
-
-  //   // start upload + CSV polling for this pair
-  //   uploadVideoFile(newPairId, leftCamId, uploadedVideoFile);
-
-  //   setUploadedVideoURL(null);
-  //   setUploadedVideoFile(null);
-  //   setSystemSettingsOpen(false);
-  // };
-
-
   const downloadCsvForPair = (pairId, cameraName) => {
     const csvText = crowdTxtMap[pairId];
     if (!csvText) {
@@ -596,10 +530,10 @@ function MainPage({ user }) {
       return;
     }
 
-    // make a safe filename from camera name
     const safeName =
-      (cameraName || "crowd_output").toLowerCase().replace(/[^a-z0-9]+/g, "_") ||
-      "crowd_output";
+      (cameraName || "crowd_output")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_") || "crowd_output";
 
     const blob = new Blob([csvText], {
       type: "text/csv;charset=utf-8;",
@@ -615,7 +549,6 @@ function MainPage({ user }) {
     URL.revokeObjectURL(url);
   };
 
-
   return (
     <div style={styles.page}>
       <div style={styles.welcomeRow}>
@@ -629,175 +562,149 @@ function MainPage({ user }) {
       </div>
 
       <div style={styles.cameraPairsContainer}>
-        {cameraPairs.map((pair) => {
-          const isCamera0 = pair.pairId === 0;
+        {cameraPairs.map((pair) => (
+          <div key={pair.pairId} style={styles.cameraPair}>
+            {pair.cameras.map((cam) => {
+              const isCsvCard = cam.role === "csv";
 
-          return (
-            <div key={pair.pairId} style={styles.cameraPair}>
-              {pair.cameras.map((cam) => {
-                const isModelVideo = cam.name.toLowerCase().includes("b");
+              const isVideo =
+                (cam.uploadedFile &&
+                  cam.uploadedFile.type &&
+                  cam.uploadedFile.type.startsWith("video")) ||
+                (cam.src &&
+                  (cam.src.endsWith(".mp4") ||
+                    cam.src.endsWith(".webm") ||
+                    cam.src.startsWith("blob:")));
 
-                // detect if this camera should be rendered as video
-                const isVideo =
-                  (cam.uploadedFile &&
-                    cam.uploadedFile.type &&
-                    cam.uploadedFile.type.startsWith("video")) ||
-                  (cam.src &&
-                    (cam.src.endsWith(".mp4") ||
-                      cam.src.endsWith(".webm") ||
-                      cam.src.startsWith("blob:")));
+              return (
+                <div key={cam.id} style={styles.cameraCard}>
+                  <div style={styles.cameraTitle}>
+                    <input
+                      type="text"
+                      value={cam.name}
+                      onChange={(e) =>
+                        updateCameraName(pair.pairId, cam.id, e.target.value)
+                      }
+                      style={styles.cameraNameInput}
+                    />
+                  </div>
 
-                return (
-                  <div key={cam.id} style={styles.cameraCard}>
-                    <div style={styles.cameraTitle}>
-                      <input
-                        type="text"
-                        value={cam.name}
-                        onChange={(e) =>
-                          updateCameraName(pair.pairId, cam.id, e.target.value)
-                        }
-                        style={styles.cameraNameInput}
-                        disabled={isCamera0}
-                      />
-                    </div>
-
-                    <div style={styles.cameraFrame}>
-                      {cam.on ? (
-                        isModelVideo ? (
-                          isCamera0 ? (
-                            <div style={styles.csvBox}>
-                              <div style={styles.csvTitle}>
-                                Sample Crowd CSV (simulated live)
-                              </div>
-                            </div>
-                          ) : (
-                            <div style={styles.csvBox}>
-                              <div
-                                style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "space-between",
-                                  marginBottom: 6,
-                                }}
-                              >
-                                <div style={styles.csvTitle}>Crowd CSV (live)</div>
-                                <button
-                                  type="button"
-                                  onClick={() => downloadCsvForPair(pair.pairId, cam.name)}
-                                  disabled={!crowdTxtMap[pair.pairId]}
-                                  style={{
-                                    ...styles.downloadBtn,
-                                    ...(crowdTxtMap[pair.pairId] ? {} : styles.downloadBtnDisabled),
-                                  }}
-                                >
-                                  Download CSV
-                                </button>
-                              </div>
-
-                              <CsvViewer
-                                csvText={crowdTxtMap[pair.pairId]}
-                                fallbackMessage="Upload a video on the left to stream output_with_hinderance.csv from backend."
-                                styleOverride={styles.csvContent}
-                              />
-                            </div>
-
-                          )
-                        ) : (
-                          <>
-                            {!cam.src ? (
-                              <div
-                                style={{
-                                  color: "#6b7280",
-                                  fontSize: 13,
-                                  fontStyle: "italic",
-                                }}
-                              >
-                                Upload a video to begin
-                              </div>
-                            ) : isVideo ? (
-                              <video
-                                autoPlay
-                                muted
-                                loop
-                                playsInline
-                                disablePictureInPicture
-                                controls={false}
-                                style={styles.cameraVideo}
-                                src={cam.src}
-                                onContextMenu={(e) => e.preventDefault()}
-                                onPause={(e) => e.target.play()}   // force play again
-                              />
-
-
-                            ) : (
-                              <img
-                                style={styles.cameraVideo}
-                                alt={`${cam.name} Feed`}
-                                src={cam.src}
-                              />
-                            )}
-                          </>
-                        )
-                      ) : (
-                        <div
-                          style={{
-                            color: "#6b7280",
-                            fontStyle: "italic",
-                            fontSize: 13,
-                          }}
-                        >
-                          Camera Off
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={styles.toggleSwitch}>
-                      <label style={styles.toggleLabel}>{cam.name} On/Off</label>
-                      <input
-                        type="checkbox"
-                        checked={cam.on}
-                        onChange={() => toggleCamera(pair.pairId, cam.id)}
-                      />
-                    </div>
-
-                    {/* Upload input only for non-sample, left (real) cameras */}
-                    {!isModelVideo && !isCamera0 && (
-                      <div style={styles.cameraSettings}>
-                        <label style={{ fontSize: 13 }}>
-                          Upload Video:
-                          <input
-                            type="file"
-                            accept="video/*"
-                            onChange={(e) => {
-                              if (e.target.files && e.target.files[0]) {
-                                uploadVideoFile(
-                                  pair.pairId,
-                                  cam.id,
-                                  e.target.files[0]
-                                );
-                              }
+                  <div style={styles.cameraFrame}>
+                    {cam.on ? (
+                      isCsvCard ? (
+                        <div style={styles.csvBox}>
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              marginBottom: 6,
                             }}
-                            style={styles.uploadInput}
+                          >
+                            <div style={styles.csvTitle}>Crowd CSV (live)</div>
+                          </div>
+
+                          <CsvViewer
+                            csvText={crowdTxtMap[pair.pairId]}
+                            fallbackMessage="Upload a video on the left to stream CSV from backend."
+                            styleOverride={styles.csvContent}
                           />
-                        </label>
+                        </div>
+                      ) : (
+                        <>
+                          {!cam.src ? (
+                            <div
+                              style={{
+                                color: "#6b7280",
+                                fontSize: 13,
+                                fontStyle: "italic",
+                              }}
+                            >
+                              Upload a video to begin
+                            </div>
+                          ) : isVideo ? (
+                            <video
+                              key={cam.src} // force remount on new upload
+                              autoPlay
+                              muted
+                              loop
+                              playsInline
+                              disablePictureInPicture
+                              controls={false}
+                              style={styles.cameraVideo}
+                              src={cam.src}
+                              onContextMenu={(e) => e.preventDefault()}
+                              onPause={(e) => e.target.play()}
+                            />
+                          ) : (
+                            <img
+                              style={styles.cameraVideo}
+                              alt={`${cam.name} Feed`}
+                              src={cam.src}
+                            />
+                          )}
+                        </>
+                      )
+                    ) : (
+                      <div
+                        style={{
+                          color: "#6b7280",
+                          fontStyle: "italic",
+                          fontSize: 13,
+                        }}
+                      >
+                        Camera Off
                       </div>
                     )}
-
-                    {!isCamera0 && cam.id === pair.cameras[0].id && (
-                      <button
-                        onClick={() => deleteCameraPair(pair.pairId)}
-                        style={styles.deleteCameraBtn}
-                        title="Delete this camera pair"
-                      >
-                        Delete
-                      </button>
-                    )}
                   </div>
-                );
-              })}
-            </div>
-          );
-        })}
+
+                  <div style={styles.toggleSwitch}>
+                    <label style={styles.toggleLabel}>{cam.name} On/Off</label>
+                    <input
+                      type="checkbox"
+                      checked={cam.on}
+                      onChange={() => toggleCamera(pair.pairId, cam.id)}
+                    />
+                  </div>
+
+                  {/* Upload input only for left (real) cameras */}
+                  {cam.role === "real" && (
+                    <div style={styles.cameraSettings}>
+                      <label style={{ fontSize: 13 }}>
+                        Upload Video:
+                        <input
+                          type="file"
+                          accept="video/*"
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                              uploadVideoFile(
+                                pair.pairId,
+                                cam.id,
+                                e.target.files[0]
+                              );
+                            }
+                          }}
+                          style={styles.uploadInput}
+                        />
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Delete whole pair (only show on left card) */}
+                  {cam.role === "real" && (
+                    <button
+                      onClick={() => deleteCameraPair(pair.pairId)}
+                      style={styles.deleteCameraBtn}
+                      title="Delete this camera pair"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
 
       <button style={styles.addCameraBtn} onClick={addCameraPair}>
@@ -859,11 +766,6 @@ function MainPage({ user }) {
           >
             Add Selected Camera
           </button>
-
-          {/* If later you want to re-enable system settings upload: 
-              you can put your previous upload+preview+addUploadedVideo
-              block back here, it will work with the updated logic.
-          */}
 
           <button
             onClick={() => setSystemSettingsOpen(false)}

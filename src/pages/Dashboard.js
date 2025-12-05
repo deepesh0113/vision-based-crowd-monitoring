@@ -1,475 +1,431 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  CartesianGrid,
-  Legend,
-  Cell,
-  ReferenceLine,
-} from "recharts";
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  BarChart, Bar, CartesianGrid, Legend, Cell, ReferenceLine,
+} from 'recharts';
 
 function useWindowWidth() {
   const [width, setWidth] = useState(window.innerWidth);
   useEffect(() => {
     const handleResize = () => setWidth(window.innerWidth);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
   return width;
 }
 
 function Dashboard() {
   const navigate = useNavigate();
-
   const [csvFile, setCsvFile] = useState(null);
 
-  // filtered data used by day-wise graphs
-  const [graphData, setGraphData] = useState([]); // time-series records
+  // Filtered data used by day-wise graphs
+  const [graphData, setGraphData] = useState([]);
   const [perSecondData, setPerSecondData] = useState([]);
-  const [frameSeries, setFrameSeries] = useState([]);
+  const [distributionData, setDistributionData] = useState([]); // NEW: Count distribution
   const [summary, setSummary] = useState(null);
 
-  // raw (unfiltered) data for filters
+  // Raw unfiltered data for filters
   const [rawGraphData, setRawGraphData] = useState([]);
   const [rawPerSecondData, setRawPerSecondData] = useState([]);
-  const [rawFrameSeries, setRawFrameSeries] = useState([]);
 
-  // day-wise filter
+  // Day-wise filter
   const [availableDates, setAvailableDates] = useState([]);
-  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedDate, setSelectedDate] = useState('');
 
-  // month-wise filter
+  // Month-wise filter
   const [availableMonths, setAvailableMonths] = useState([]);
-  const [selectedMonth, setSelectedMonth] = useState("");
-  const [monthDailyData, setMonthDailyData] = useState([]); // aggregated per day for month view
+  const [selectedMonth, setSelectedMonth] = useState('');
+  const [monthDailyData, setMonthDailyData] = useState([]);
 
-  // view mode: "day" or "month"
-  const [viewMode, setViewMode] = useState("day");
+  // Year-wise filter
+  const [availableYears, setAvailableYears] = useState([]);
+  const [selectedYear, setSelectedYear] = useState('');
+  const [yearMonthlyData, setYearMonthlyData] = useState([]);
+
+  // View mode: day, month, year
+  const [viewMode, setViewMode] = useState('day');
 
   const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState([]); // left-side history
+  const [history, setHistory] = useState([]);
   const [selectedHistory, setSelectedHistory] = useState(null);
 
-  // thresholds
-  const [minThreshold, setMinThreshold] = useState("");
-  const [maxThreshold, setMaxThreshold] = useState("");
+  // Thresholds
+  const [minThreshold, setMinThreshold] = useState('');
+  const [maxThreshold, setMaxThreshold] = useState('');
 
-  // details toggles
+  // Details toggles
   const [showTimeDetails, setShowTimeDetails] = useState(false);
   const [showPerSecondDetails, setShowPerSecondDetails] = useState(false);
-  const [showFrameDetails, setShowFrameDetails] = useState(false);
-
-
-  // year-wise filter
-  const [availableYears, setAvailableYears] = useState([]);
-  const [selectedYear, setSelectedYear] = useState("");
-  const [yearMonthlyData, setYearMonthlyData] = useState([]); // aggregated per month for year view
-
+  const [showDistributionDetails, setShowDistributionDetails] = useState(false); // NEW
   const [showMonthDetails, setShowMonthDetails] = useState(false);
-  const [showYearDetails, setShowYearDetails] = useState(false);
   const [showMonthDetails2, setShowMonthDetails2] = useState(false);
   const [showMonthDetails3, setShowMonthDetails3] = useState(false);
+  const [showYearDetails, setShowYearDetails] = useState(false);
   const [showYearDetails2, setShowYearDetails2] = useState(false);
   const [showYearDetails3, setShowYearDetails3] = useState(false);
-
-
 
   const width = useWindowWidth();
   const isMobile = width < 700;
 
-  // parsed thresholds
   const parsedMin = parseFloat(minThreshold);
   const parsedMax = parseFloat(maxThreshold);
-  const thresholdsActive =
-    !Number.isNaN(parsedMin) && !Number.isNaN(parsedMax);
+  const thresholdsActive = !Number.isNaN(parsedMin) && !Number.isNaN(parsedMax);
 
   // Theme colors
-  const BG = "#020617";
-  const BLUE = "#3b82f6";
-  const CYAN = "#0ea5e9";
-  const GREEN = "#22c55e";
-  const RED = "#ef4444";
-  const AMBER = "#facc15";
-  const LENS_ALERT = "#a855f7";   // violet for lens_covered_or_extremely_dark
-  const FREEZE_ALERT = "#f97316"; // orange for camera_frozen
-
+  const BG = '#020617';
+  const BLUE = '#3b82f6';
+  const CYAN = '#0ea5e9';
+  const GREEN = '#22c55e';
+  const RED = '#ef4444';
+  const AMBER = '#facc15';
+  const LENSALERT = '#a855f7'; // violet for lenscoveredorextremelydark
+  const FREEZEALERT = '#f97316'; // orange for camerafrozen
 
   const styles = {
     page: {
-      minHeight: "100vh",
+      minHeight: '100vh',
       backgroundColor: BG,
-      fontFamily:
-        "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-      display: "flex",
-      justifyContent: "center",
-      padding: isMobile ? "18px 4vw 32px" : "28px 28px 40px",
-      boxSizing: "border-box",
+      fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
+      display: 'flex',
+      justifyContent: 'center',
+      padding: isMobile ? '18px 4vw 32px' : '28px 40px',
+      boxSizing: 'border-box',
     },
     content: {
-      width: "100%",
-      maxWidth: 1120,
-      display: "flex",
-      flexDirection: "column",
-      gap: isMobile ? 16 : 20,
-      animation: "fadeIn 0.5s ease-in",
+      width: '100%',
+      maxWidth: '1120px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: isMobile ? '16px' : '20px',
+      animation: 'fadeIn 0.5s ease-in',
     },
     topBar: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "flex-start",
-      gap: 16,
-      flexWrap: "wrap",
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      gap: '16px',
+      flexWrap: 'wrap',
     },
     backBtn: {
-      borderRadius: 999,
-      border: "1px solid #1e293b",
-      backgroundColor: "transparent",
-      color: "#9ca3af",
-      padding: "7px 16px",
-      fontSize: 13,
-      cursor: "pointer",
+      borderRadius: '999px',
+      border: '1px solid #1e293b',
+      backgroundColor: 'transparent',
+      color: '#9ca3af',
+      padding: '7px 16px',
+      fontSize: '13px',
+      cursor: 'pointer',
     },
     brandBlock: {
-      display: "flex",
-      flexDirection: "column",
-      gap: 2,
-      textAlign: "left",
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '2px',
+      textAlign: 'left',
     },
     brand: {
-      fontSize: 11,
-      textTransform: "uppercase",
-      letterSpacing: "0.23em",
-      color: "#6b7280",
+      fontSize: '11px',
+      textTransform: 'uppercase',
+      letterSpacing: '0.23em',
+      color: '#6b7280',
     },
     header: {
-      fontWeight: 600,
-      fontSize: isMobile ? "1.25rem" : "1.6rem",
-      color: "#e5e7eb",
+      fontWeight: '600',
+      fontSize: isMobile ? '1.25rem' : '1.6rem',
+      color: '#e5e7eb',
     },
     subtitle: {
-      fontSize: 12,
-      color: "#9ca3af",
+      fontSize: '12px',
+      color: '#9ca3af',
     },
-
     theoryCard: {
-      background: "radial-gradient(circle at top left, #020617, #020617 60%)",
-      borderRadius: 18,
-      padding: isMobile ? "14px 14px" : "18px 18px",
-      boxShadow: "0 24px 52px rgba(15,23,42,0.9)",
-      border: "1px solid #111827",
+      background: 'radial-gradient(circle at top left, #020617, #020617 60%)',
+      borderRadius: '18px',
+      padding: isMobile ? '14px 14px 18px' : '18px',
+      boxShadow: '0 24px 52px rgba(15,23,42,0.9)',
+      border: '1px solid #111827',
     },
     theoryTitle: {
-      fontSize: 14,
-      textTransform: "uppercase",
-      letterSpacing: "0.18em",
-      color: "#9ca3af",
-      marginBottom: 8,
+      fontSize: '14px',
+      textTransform: 'uppercase',
+      letterSpacing: '0.18em',
+      color: '#9ca3af',
+      marginBottom: '8px',
     },
     theoryHeading: {
-      fontSize: 15,
-      fontWeight: 600,
-      color: "#e5e7eb",
-      marginBottom: 8,
+      fontSize: '15px',
+      fontWeight: '600',
+      color: '#e5e7eb',
+      marginBottom: '8px',
     },
     theoryText: {
-      fontSize: 13,
-      color: "#9ca3af",
-      lineHeight: 1.65,
+      fontSize: '13px',
+      color: '#9ca3af',
+      lineHeight: '1.65',
     },
     theoryList: {
-      marginTop: 10,
-      paddingLeft: 18,
-      fontSize: 13,
-      color: "#9ca3af",
-      lineHeight: 1.6,
+      marginTop: '10px',
+      paddingLeft: '18px',
+      fontSize: '13px',
+      color: '#9ca3af',
+      lineHeight: '1.6',
     },
-
     mainRow: {
-      display: "flex",
-      flexDirection: isMobile ? "column" : "row",
-      gap: 18,
-      alignItems: "flex-start",
+      display: 'flex',
+      flexDirection: isMobile ? 'column' : 'row',
+      gap: '18px',
+      alignItems: 'flex-start',
     },
     leftCol: {
-      flex: isMobile ? "unset" : "0 0 280px",
-      width: isMobile ? "100%" : 280,
-      display: "flex",
-      flexDirection: "column",
-      gap: 14,
+      flex: isMobile ? 'unset' : '0 0 280px',
+      width: isMobile ? '100%' : '280px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '14px',
     },
     rightCol: {
-      flex: 1,
-      display: "flex",
-      flexDirection: "column",
-      gap: 14,
+      flex: '1',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '14px',
     },
-
     historyCard: {
-      background: "radial-gradient(circle at top, #020617, #020617 70%)",
-      borderRadius: 18,
-      padding: isMobile ? "14px 14px" : "16px 16px",
-      boxShadow: "0 22px 50px rgba(15,23,42,0.9)",
-      border: "1px solid #111827",
+      background: 'radial-gradient(circle at top, #020617, #020617 70%)',
+      borderRadius: '18px',
+      padding: isMobile ? '14px 14px 16px' : '16px',
+      boxShadow: '0 22px 50px rgba(15,23,42,0.9)',
+      border: '1px solid #111827',
     },
     historyTitle: {
-      fontSize: 14,
-      color: "#93c5fd",
-      fontWeight: 600,
-      marginBottom: 6,
+      fontSize: '14px',
+      color: '#93c5fd',
+      fontWeight: '600',
+      marginBottom: '6px',
     },
     historySub: {
-      fontSize: 12,
-      color: "#6b7280",
-      marginBottom: 10,
+      fontSize: '12px',
+      color: '#6b7280',
+      marginBottom: '10px',
     },
     historyList: {
-      margin: 0,
-      padding: 0,
-      listStyle: "none",
-      maxHeight: 260,
-      overflowY: "auto",
+      margin: '0',
+      padding: '0',
+      listStyle: 'none',
+      maxHeight: '260px',
+      overflowY: 'auto',
     },
     historyItem: {
-      padding: "7px 0",
-      borderBottom: "1px solid rgba(15,23,42,0.9)",
+      padding: '7px 0',
+      borderBottom: '1px solid rgba(15,23,42,0.9)',
     },
     historyName: {
-      fontSize: 13,
-      color: "#e5e7eb",
-      marginBottom: 2,
-      wordBreak: "break-all",
+      fontSize: '13px',
+      color: '#e5e7eb',
+      marginBottom: '2px',
+      wordBreak: 'break-all',
     },
     historyMeta: {
-      fontSize: 11,
-      color: "#9ca3af",
+      fontSize: '11px',
+      color: '#9ca3af',
     },
     historyEmpty: {
-      fontSize: 12,
-      color: "#6b7280",
-      marginTop: 6,
+      fontSize: '12px',
+      color: '#6b7280',
+      marginTop: '6px',
     },
-
     graphBox: {
-      background: "radial-gradient(circle at top right, #020617, #020617 70%)",
-      borderRadius: 18,
-      border: "1px solid #111827",
-      boxShadow: "0 24px 52px rgba(15,23,42,0.95)",
-      padding: isMobile ? "16px 12px 20px" : "18px 18px 24px",
-      display: "flex",
-      flexDirection: "column",
-      gap: 10,
+      background: 'radial-gradient(circle at top right, #020617, #020617 70%)',
+      borderRadius: '18px',
+      border: '1px solid #111827',
+      boxShadow: '0 24px 52px rgba(15,23,42,0.95)',
+      padding: isMobile ? '16px 12px 20px' : '18px 24px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '10px',
     },
     graphTitle: {
-      fontSize: 14,
+      fontSize: '14px',
       color: BLUE,
-      fontWeight: 600,
+      fontWeight: '600',
     },
     graphSubtitle: {
-      fontSize: 12,
-      color: "#6b7280",
+      fontSize: '12px',
+      color: '#6b7280',
     },
     fileInput: {
-      marginTop: 8,
-      marginBottom: 10,
-      padding: 7,
-      borderRadius: 10,
+      marginTop: '8px',
+      marginBottom: '10px',
+      padding: '7px',
+      borderRadius: '10px',
       background: BG,
-      color: "#e5e7eb",
-      border: "1px solid #111827",
-      fontSize: 13,
+      color: '#e5e7eb',
+      border: '1px solid #111827',
+      fontSize: '13px',
     },
     resetBtn: {
-      backgroundColor: "#10b981",
-      color: "#fff",
-      padding: "8px 20px",
-      borderRadius: 999,
-      cursor: "pointer",
-      border: "none",
-      fontWeight: 600,
+      backgroundColor: '#10b981',
+      color: '#fff',
+      padding: '8px 20px',
+      borderRadius: '999px',
+      cursor: 'pointer',
+      border: 'none',
+      fontWeight: '600',
     },
     actionBtn: {
       backgroundColor: CYAN,
-      color: "#0b1120",
-      cursor: "pointer",
-      border: "none",
-      fontWeight: 600,
-      padding: "7px 16px",
-      borderRadius: 999,
-      fontSize: 13,
+      color: '#0b1120',
+      cursor: 'pointer',
+      border: 'none',
+      fontWeight: '600',
+      padding: '7px 16px',
+      borderRadius: '999px',
+      fontSize: '13px',
     },
     selectedFile: {
-      marginTop: 8,
-      fontSize: 12,
-      color: "#93c5fd",
-      wordBreak: "break-all",
+      marginTop: '8px',
+      fontSize: '12px',
+      color: '#93c5fd',
+      wordBreak: 'break-all',
     },
-
     graphArea: {
-      width: "100%",
-      height: 320,
-      marginTop: 4,
+      width: '100%',
+      height: '320px',
+      marginTop: '4px',
     },
     graphPlaceholder: {
-      flex: 1,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontSize: 13,
+      flex: '1',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '13px',
       color: CYAN,
-      borderRadius: 12,
-      border: "1px dashed #1e293b",
+      borderRadius: '12px',
+      border: '1px dashed #1e293b',
     },
     summaryRow: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 10,
-      fontSize: 12,
-      color: "#9ca3af",
-      marginTop: 4,
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '10px',
+      fontSize: '12px',
+      color: '#9ca3af',
+      marginTop: '4px',
     },
     summaryChip: {
-      padding: "4px 10px",
-      borderRadius: 999,
-      border: "1px solid #1e293b",
+      padding: '4px 10px',
+      borderRadius: '999px',
+      border: '1px solid #1e293b',
     },
     thresholdRow: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 8,
-      marginTop: 10,
-      alignItems: "center",
-      fontSize: 12,
-      color: "#9ca3af",
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '8px',
+      marginTop: '10px',
+      alignItems: 'center',
+      fontSize: '12px',
+      color: '#9ca3af',
     },
     thresholdInput: {
-      width: 90,
-      padding: "4px 8px",
-      borderRadius: 999,
-      border: "1px solid #1f2937",
-      backgroundColor: "#020617",
-      color: "#e5e7eb",
-      fontSize: 12,
-      outline: "none",
+      width: '90px',
+      padding: '4px 8px',
+      borderRadius: '999px',
+      border: '1px solid #1f2937',
+      backgroundColor: '#020617',
+      color: '#e5e7eb',
+      fontSize: '12px',
+      outline: 'none',
     },
     detailBtn: {
-      alignSelf: "flex-end",
-      marginTop: 4,
-      padding: "4px 10px",
-      fontSize: 11,
-      borderRadius: 999,
-      border: "1px solid #1f2937",
-      backgroundColor: "#020617",
-      color: "#9ca3af",
-      cursor: "pointer",
+      alignSelf: 'flex-end',
+      marginTop: '4px',
+      padding: '4px 10px',
+      fontSize: '11px',
+      borderRadius: '999px',
+      border: '1px solid #1f2937',
+      backgroundColor: '#020617',
+      color: '#9ca3af',
+      cursor: 'pointer',
     },
     detailPanel: {
-      marginTop: 8,
-      padding: "8px 10px",
-      borderRadius: 12,
-      border: "1px solid #1f2937",
-      backgroundColor: "#020617",
-      fontSize: 11,
-      maxHeight: 160,
-      overflowY: "auto",
-      lineHeight: 1.5,
+      marginTop: '8px',
+      padding: '8px 10px',
+      borderRadius: '12px',
+      border: '1px solid #1f2937',
+      backgroundColor: '#020617',
+      fontSize: '11px',
+      maxHeight: '160px',
+      overflowY: 'auto',
+      lineHeight: '1.5',
     },
     detailSectionTitle: {
-      fontWeight: 600,
-      marginTop: 4,
-      marginBottom: 2,
-      fontSize: 11,
+      fontWeight: '600',
+      marginTop: '4px',
+      marginBottom: '2px',
+      fontSize: '11px',
     },
     dateSelect: {
-      padding: "4px 8px",
-      borderRadius: 999,
-      border: "1px solid #1f2937",
-      backgroundColor: "#020617",
-      color: "#e5e7eb",
-      fontSize: 12,
-      outline: "none",
+      padding: '4px 8px',
+      borderRadius: '999px',
+      border: '1px solid #1f2937',
+      backgroundColor: '#020617',
+      color: '#e5e7eb',
+      fontSize: '12px',
+      outline: 'none',
     },
     filterBtn: {
       backgroundColor: BLUE,
-      color: "#f9fafb",
-      border: "none",
-      borderRadius: 999,
-      padding: "6px 14px",
-      fontSize: 12,
-      cursor: "pointer",
-      fontWeight: 500,
+      color: '#f9fafb',
+      border: 'none',
+      borderRadius: '999px',
+      padding: '6px 14px',
+      fontSize: '12px',
+      cursor: 'pointer',
+      fontWeight: '500',
     },
     viewToggleRow: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 8,
-      marginTop: 10,
-      alignItems: "center",
-      fontSize: 12,
-      color: "#9ca3af",
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '8px',
+      marginTop: '10px',
+      alignItems: 'center',
+      fontSize: '12px',
+      color: '#9ca3af',
     },
     viewToggleBtn: {
-      padding: "5px 12px",
-      borderRadius: 999,
-      border: "1px solid #1f2937",
-      backgroundColor: "#020617",
-      color: "#9ca3af",
-      fontSize: 12,
-      cursor: "pointer",
+      padding: '5px 12px',
+      borderRadius: '999px',
+      border: '1px solid #1f2937',
+      backgroundColor: '#020617',
+      color: '#9ca3af',
+      fontSize: '12px',
+      cursor: 'pointer',
     },
     viewToggleBtnActive: {
       backgroundColor: BLUE,
-      color: "#f9fafb",
+      color: '#f9fafb',
       borderColor: BLUE,
     },
   };
 
-  // custom dot renderer for line charts based on thresholds
-  // const renderColoredDot = (props) => {
-  //   const { cx, cy, payload } = props;
-  //   const value = payload.count;
-  //   let fill = "#60a5fa";
-
-  //   if (thresholdsActive) {
-  //     if (value > parsedMax) fill = RED; // alert
-  //     else if (value >= parsedMin && value <= parsedMax) fill = GREEN; // safe
-  //     else fill = AMBER; // below min
-  //   }
-
-  //   return (
-  //     <circle cx={cx} cy={cy} r={3} fill={fill} stroke={BG} strokeWidth={1} />
-  //   );
-  // };
-  // custom dot renderer for line charts based on thresholds + alert type
+  // custom dot renderer for line charts based on thresholds + alert column
   const renderColoredDot = (props) => {
     const { cx, cy, payload } = props;
     const value = payload.count;
-
-    // alert can be: "lens_covered_or_extremely_dark", "camera_frozen", or empty/undefined
     const alertType = payload.alert ? String(payload.alert).trim() : "";
 
-    let fill = "#60a5fa"; // default blue-ish
+    let fill = "#60a5fa";  // default blue
     let radius = 3;
 
+    // 1) camera alerts override thresholds
     if (alertType === "lens_covered_or_extremely_dark") {
-      // camera covered / extremely dark -> violet dot
-      fill = LENS_ALERT;
+      fill = LENSALERT;
       radius = 5;
     } else if (alertType === "camera_frozen") {
-      // camera frozen -> orange dot
-      fill = FREEZE_ALERT;
+      fill = FREEZEALERT;
       radius = 5;
     } else if (thresholdsActive) {
-      // fallback to threshold-based coloring if no explicit alert
-      if (value > parsedMax) fill = RED; // alert
+      // 2) if no alert string, fall back to threshold colors
+      if (value > parsedMax) fill = RED;                    // above alert
       else if (value >= parsedMin && value <= parsedMax) fill = GREEN; // safe
-      else fill = AMBER; // below min
+      else fill = AMBER;                                    // below min
     }
 
     return (
@@ -485,50 +441,66 @@ function Dashboard() {
   };
 
 
-  // ---------- Filter helpers ----------
-
-  // Day-wise filter: single date
-  const applyDateFilter = (date, recordsSrc, perSecondSrc, frameSrc) => {
+  // Filter helpers
+  // Day-wise filter (single date)
+  const applyDateFilter = (date, recordsSrc, perSecondSrc) => {
     if (!date) {
       setGraphData(recordsSrc);
       setPerSecondData(perSecondSrc);
-      setFrameSeries(frameSrc);
+      computeDistribution(recordsSrc); // NEW: compute distribution for all dates
       return;
     }
 
-    const filteredRecords = recordsSrc.filter((r) => r.date === date);
-    const filteredPerSecond = perSecondSrc.filter((r) => r.date === date);
-    const filteredFrame = frameSrc.filter((r) => r.date === date);
-
+    const filteredRecords = recordsSrc.filter(r => r.date === date);
+    const filteredPerSecond = perSecondSrc.filter(r => r.date === date);
     setGraphData(filteredRecords);
     setPerSecondData(filteredPerSecond);
-    setFrameSeries(filteredFrame);
+    computeDistribution(filteredRecords); // NEW: compute distribution for selected date
   };
 
-  // Month-wise filter: aggregate per date inside selected month
+  // NEW: Compute count distribution for histogram
+  const computeDistribution = (records) => {
+    if (!records.length) {
+      setDistributionData([]);
+      return;
+    }
+
+    // Bin counts into 10 buckets
+    const minCount = Math.min(...records.map(r => r.count));
+    const maxCount = Math.max(...records.map(r => r.count));
+    const binSize = (maxCount - minCount) / 10 || 1;
+
+    const bins = Array(10).fill(0);
+    records.forEach(r => {
+      const binIndex = Math.min(Math.floor((r.count - minCount) / binSize), 9);
+      bins[binIndex]++;
+    });
+
+    const distribution = bins.map((count, index) => ({
+      bin: index + 1,
+      range: `${Math.round(minCount + index * binSize)}-${Math.round(minCount + (index + 1) * binSize)}`,
+      frequency: count,
+      count: minCount + (index + 0.5) * binSize
+    }));
+
+    setDistributionData(distribution);
+  };
+
+  // Month-wise filter (aggregate per date inside selected month)
   const applyMonthFilter = (monthKey, recordsSrc) => {
     if (!monthKey) {
       setMonthDailyData([]);
       return;
     }
 
-    // recordsSrc has { date, timestamp, count }
-    const monthRecords = recordsSrc.filter(
-      (r) => r.date && r.date.startsWith(monthKey)
-    );
-
+    // recordsSrc has date, timestamp, count
+    const monthRecords = recordsSrc.filter(r => r.date.startsWith(monthKey));
     const dayMap = {};
 
-    monthRecords.forEach((r) => {
-      const d = r.date; // "YYYY-MM-DD"
+    monthRecords.forEach(r => {
+      const d = r.date; // YYYY-MM-DD
       if (!dayMap[d]) {
-        dayMap[d] = {
-          date: d,
-          dayLabel: d.slice(8, 10),
-          total: 0,
-          max: -Infinity,
-          n: 0,
-        };
+        dayMap[d] = { date: d, dayLabel: d.slice(8, 10), total: 0, max: -Infinity, n: 0 };
       }
       dayMap[d].total += r.count;
       dayMap[d].max = Math.max(dayMap[d].max, r.count);
@@ -536,7 +508,7 @@ function Dashboard() {
     });
 
     const dailyArr = Object.values(dayMap)
-      .map((d) => ({
+      .map(d => ({
         date: d.date,
         day: d.dayLabel,
         avg_count: d.total / d.n,
@@ -546,282 +518,237 @@ function Dashboard() {
       .sort((a, b) => a.date.localeCompare(b.date));
 
     setMonthDailyData(dailyArr);
-  };
 
 
-  // Year-wise filter: aggregate per month inside selected year
-  const applyYearFilter = (yearKey, recordsSrc) => {
-    if (!yearKey) {
-      setYearMonthlyData([]);
-      return;
-    }
 
-    // recordsSrc has { date, timestamp, count }
-    const yearRecords = recordsSrc.filter(
-      (r) => r.date && r.date.startsWith(yearKey)
-    );
-
-    const monthMap = {};
-    yearRecords.forEach((r) => {
-      // monthKey = "YYYY-MM"
-      const monthKey = r.date.slice(0, 7);
-      const shortMonth = monthKey.slice(5, 7); // "01", "02", ...
-
-      if (!monthMap[monthKey]) {
-        monthMap[monthKey] = {
-          month: shortMonth, // for x-axis
-          monthLabel: monthKey, // full "YYYY-MM"
-          total: 0,
-          max: -Infinity,
-          n: 0,
-        };
-      }
-      monthMap[monthKey].total += r.count;
-      monthMap[monthKey].max = Math.max(monthMap[monthKey].max, r.count);
-      monthMap[monthKey].n += 1;
-    });
-
-    const monthlyArr = Object.values(monthMap)
-      .map((m) => ({
-        month: m.month,
-        monthLabel: m.monthLabel,
-        avg_count: m.total / m.n,
-        max_count: m.max,
-        total_count: m.total,
-      }))
-      .sort((a, b) => a.monthLabel.localeCompare(b.monthLabel));
-
-    setYearMonthlyData(monthlyArr);
-  };
-
-
-  // ---------- Upload handler ----------
-
-  const handleCSVUpload = async () => {
-    if (!csvFile) {
-      alert("Please select a CSV file first!");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", csvFile);
-
-    setLoading(true);
-
-    try {
-      // const res = await fetch("http://127.0.0.1:8000/upload-csv", {
-      //   method: "POST",
-      //   body: formData,
-      // });
-      const res = await fetch("http://127.0.0.1:8000/dashboard/upload-csv", {
-        method: "POST",
-        body: formData,
-      });
-
-
-      const data = await res.json();
-
-      if (data.status === "error") {
-        alert(data.message || "Error processing CSV");
-        setLoading(false);
+    // Year-wise filter (aggregate per month inside selected year)
+    const applyYearFilter = (yearKey, recordsSrc) => {
+      if (!yearKey) {
+        setYearMonthlyData([]);
         return;
       }
 
-      const records = data.records || [];
-      const perSecondAll = data.per_second || [];
-      const frameAll = data.frame_series || [];
-      const summaryObj = data.summary || null;
+      // recordsSrc has date, timestamp, count
+      const yearRecords = recordsSrc.filter(r => r.date.startsWith(yearKey));
+      const monthMap = {};
 
-      // store raw (unfiltered)
-      setRawGraphData(records);
-      setRawPerSecondData(perSecondAll);
-      setRawFrameSeries(frameAll);
+      yearRecords.forEach(r => {
+        const monthKey = r.date.slice(0, 7); // YYYY-MM
+        const shortMonth = monthKey.slice(5, 7); // 01, 02, ...
+        if (!monthMap[monthKey]) {
+          monthMap[monthKey] = {
+            month: shortMonth, // for x-axis
+            monthLabel: monthKey, // full YYYY-MM
+            total: 0,
+            max: -Infinity,
+            n: 0,
+          };
+        }
+        monthMap[monthKey].total += r.count;
+        monthMap[monthKey].max = Math.max(monthMap[monthKey].max, r.count);
+        monthMap[monthKey].n += 1;
+      });
 
-      // collect unique dates from records
-      const uniqueDates = Array.from(
-        new Set(records.map((r) => r.date).filter(Boolean))
-      );
-      setAvailableDates(uniqueDates);
-      const initialDate = uniqueDates[0] || "";
-      setSelectedDate(initialDate);
+      const monthlyArr = Object.values(monthMap)
+        .map(m => ({
+          month: m.month,
+          monthLabel: m.monthLabel,
+          avg_count: m.total / m.n,
+          max_count: m.max,
+          total_count: m.total,
+        }))
+        .sort((a, b) => a.monthLabel.localeCompare(b.monthLabel));
 
-      // collect unique months from records (YYYY-MM)
-      const uniqueMonths = Array.from(
-        new Set(
-          records
-            .map((r) => (r.date ? r.date.slice(0, 7) : null))
-            .filter(Boolean)
+      setYearMonthlyData(monthlyArr);
+
+    };
+
+    // Upload handler
+    const handleCSVUpload = async () => {
+      if (!csvFile) {
+        alert('Please select a CSV file first!');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', csvFile);
+      setLoading(true);
+
+      try {
+        const res = await fetch('http://127.0.0.1:8000/dashboard/upload-csv', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+
+        if (data.status === 'error') {
+          alert(data.message || 'Error processing CSV');
+          setLoading(false);
+          return;
+        }
+
+        const records = data.records;
+        const perSecondAll = data.persecond;
+        const summaryObj = data.summary || null;
+
+        // Store raw unfiltered
+        setRawGraphData(records);
+        setRawPerSecondData(perSecondAll);
+
+        // Collect unique dates from records
+        const uniqueDates = Array.from(new Set(records.map(r => r.date).filter(Boolean)));
+        setAvailableDates(uniqueDates);
+        const initialDate = uniqueDates[0];
+        setSelectedDate(initialDate);
+
+        // Collect unique months from records (YYYY-MM)
+        const uniqueMonths = Array.from(
+          new Set(records.map(r => r.date ? r.date.slice(0, 7) : null).filter(Boolean))
+        );
+        uniqueMonths.sort();
+        setAvailableMonths(uniqueMonths);
+        const initialMonth = uniqueMonths[0];
+        setSelectedMonth(initialMonth);
+
+        // Collect unique years
+        const uniqueYears = Array.from(
+          new Set(records.map(r => r.date ? r.date.slice(0, 4) : null).filter(Boolean))
+        );
+        uniqueYears.sort();
+        setAvailableYears(uniqueYears);
+        const initialYear = uniqueYears[0];
+        setSelectedYear(initialYear);
+
+        // Default to day view
+        setViewMode('day');
+
+        // Apply initial day filter
+        applyDateFilter(initialDate, records, perSecondAll);
+
+        // Compute month aggregation for initial month (for when user switches view)
+        applyMonthFilter(initialMonth, records);
+        applyYearFilter(initialYear, records);
+
+        setSummary(summaryObj);
+
+        // History entry
+        const minVal = summaryObj && typeof summaryObj.mincount !== 'undefined' ? summaryObj.mincount : null;
+        const maxVal = summaryObj && typeof summaryObj.maxcount !== 'undefined' ? summaryObj.maxcount : null;
+        const newHistoryItem = {
+          name: csvFile.name,
+          uploadedAt: new Date().toLocaleString(),
+          points: records.length,
+          minCount: minVal,
+          maxCount: maxVal,
+        };
+        setHistory(prev => [newHistoryItem, ...prev]);
+        setSelectedHistory(newHistoryItem);
+
+      } catch (err) {
+        console.error('Error:', err);
+        alert('Failed to upload CSV');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const resetView = () => {
+      setCsvFile(null);
+      setGraphData([]);
+      setPerSecondData([]);
+      setDistributionData([]);
+      setSummary(null);
+      setMinThreshold('');
+      setMaxThreshold('');
+      setShowTimeDetails(false);
+      setShowPerSecondDetails(false);
+      setShowDistributionDetails(false);
+      setRawGraphData([]);
+      setRawPerSecondData([]);
+      setAvailableDates([]);
+      setSelectedDate('');
+      setAvailableMonths([]);
+      setSelectedMonth('');
+      setMonthDailyData([]);
+      setViewMode('day');
+      setTimeout(() => window.location.reload(), 150);
+    };
+    // Helpers for detail panels
+
+    // Day-wise: time-series
+    const getTimeAlerts = () =>
+      thresholdsActive ? graphData.filter(p => p.count > parsedMax) : [];
+
+    const getTimeSafe = () =>
+      thresholdsActive
+        ? graphData.filter(p => p.count >= parsedMin && p.count <= parsedMax)
+        : [];
+
+    // Day-wise: per-second
+    const getPerSecondAlerts = () =>
+      thresholdsActive
+        ? perSecondData.filter(p => p.avg_count > parsedMax)
+        : [];
+
+    const getPerSecondSafe = () =>
+      thresholdsActive
+        ? perSecondData.filter(
+          p => p.avg_count >= parsedMin && p.avg_count <= parsedMax
         )
-      );
-      const uniqueYears = Array.from(
-        new Set(
-          records
-            .map((r) => (r.date ? r.date.slice(0, 4) : null))
-            .filter(Boolean)
+        : [];
+
+    // Day-wise: distribution (histogram)
+    const getDistributionAlerts = () =>
+      thresholdsActive
+        ? distributionData.filter(d => d.count > parsedMax)
+        : [];
+
+    const getDistributionSafe = () =>
+      thresholdsActive
+        ? distributionData.filter(
+          d => d.count >= parsedMin && d.count <= parsedMax
         )
-      );
-      uniqueYears.sort();
-      setAvailableYears(uniqueYears);
+        : [];
 
-      const initialYear = uniqueYears[0] || "";
-      setSelectedYear(initialYear);
-      uniqueMonths.sort();
-      setAvailableMonths(uniqueMonths);
-      const initialMonth = uniqueMonths[0] || "";
-      setSelectedMonth(initialMonth);
+    // Month-wise detail helpers (use monthDailyData)
+    const getMonthAlertDays = () =>
+      thresholdsActive
+        ? monthDailyData.filter(d => d.max_count > parsedMax)
+        : [];
 
+    const getMonthSafeDays = () =>
+      thresholdsActive
+        ? monthDailyData.filter(
+          d => d.avg_count >= parsedMin && d.avg_count <= parsedMax
+        )
+        : [];
 
+    // Year-wise detail helpers (use yearMonthlyData)
+    const getYearAlertMonths = () =>
+      thresholdsActive
+        ? yearMonthlyData.filter(m => m.max_count > parsedMax)
+        : [];
 
+    const getYearSafeMonths = () =>
+      thresholdsActive
+        ? yearMonthlyData.filter(
+          m => m.avg_count >= parsedMin && m.avg_count <= parsedMax
+        )
+        : [];
 
-      // default to day view
-      setViewMode("day");
-
-      // apply initial day filter
-      applyDateFilter(initialDate, records, perSecondAll, frameAll);
-
-      // compute month aggregation for initial month (for when user switches view)
-      applyMonthFilter(initialMonth, records);
-
-      applyYearFilter(initialYear, records);
-
-      setSummary(summaryObj);
-
-      // ---- History entry ----
-      const minVal =
-        summaryObj && typeof summaryObj.min_count !== "undefined"
-          ? summaryObj.min_count
-          : "—";
-
-      const maxVal =
-        summaryObj && typeof summaryObj.max_count !== "undefined"
-          ? summaryObj.max_count
-          : "—";
-
-      const newHistoryItem = {
-        name: csvFile.name,
-        uploadedAt: new Date().toLocaleString(),
-        points: records.length,
-        minCount: minVal,
-        maxCount: maxVal,
-      };
-
-      setHistory((prev) => [newHistoryItem, ...prev]);
-      setSelectedHistory(newHistoryItem);
-    } catch (err) {
-      console.error("Error:", err);
-      alert("Failed to upload CSV");
-    }
-
-    setLoading(false);
-  };
-
-
-  const resetView = () => {
-    setCsvFile(null);
-    setGraphData([]);
-    setPerSecondData([]);
-    setFrameSeries([]);
-    setSummary(null);
-    setMinThreshold("");
-    setMaxThreshold("");
-    setShowTimeDetails(false);
-    setShowPerSecondDetails(false);
-    setShowFrameDetails(false);
-
-    setRawGraphData([]);
-    setRawPerSecondData([]);
-    setRawFrameSeries([]);
-    setAvailableDates([]);
-    setSelectedDate("");
-    setAvailableMonths([]);
-    setSelectedMonth("");
-    setMonthDailyData([]);
-    setViewMode("day");
-    setTimeout(() => {
-      window.location.reload();
-    }, 150);
-  };
-
-  // ---------- helpers for detail panels ----------
-
-  const getTimeAlerts = () =>
-    thresholdsActive ? graphData.filter((p) => p.count > parsedMax) : [];
-
-  const getTimeSafe = () =>
-    thresholdsActive
-      ? graphData.filter(
-        (p) => p.count >= parsedMin && p.count <= parsedMax
-      )
-      : [];
-
-  const getPerSecondAlerts = () =>
-    thresholdsActive
-      ? perSecondData.filter((p) => p.avg_count > parsedMax)
-      : [];
-
-  const getPerSecondSafe = () =>
-    thresholdsActive
-      ? perSecondData.filter(
-        (p) => p.avg_count >= parsedMin && p.avg_count <= parsedMax
-      )
-      : [];
-
-  const getFrameAlerts = () =>
-    thresholdsActive ? frameSeries.filter((p) => p.count > parsedMax) : [];
-
-  const getFrameSafe = () =>
-    thresholdsActive
-      ? frameSeries.filter(
-        (p) => p.count >= parsedMin && p.count <= parsedMax
-      )
-      : [];
-
-
-  // ---------- Month-wise detail helpers (use monthDailyData) ----------
-  const getMonthAlertDays = () =>
-    thresholdsActive
-      ? monthDailyData.filter((d) => d.max_count > parsedMax)
-      : [];
-
-  const getMonthSafeDays = () =>
-    thresholdsActive
-      ? monthDailyData.filter(
-        (d) => d.avg_count >= parsedMin && d.avg_count <= parsedMax
-      )
-      : [];
-
-  // ---------- Year-wise detail helpers (use yearMonthlyData) ----------
-  const getYearAlertMonths = () =>
-    thresholdsActive
-      ? yearMonthlyData.filter((m) => m.max_count > parsedMax)
-      : [];
-
-  const getYearSafeMonths = () =>
-    thresholdsActive
-      ? yearMonthlyData.filter(
-        (m) => m.avg_count >= parsedMin && m.avg_count <= parsedMax
-      )
-      : [];
-
-
-
-
-  return (
-    <>
+    return (
       <div style={styles.page}>
         <div style={styles.content}>
           {/* TOP BAR */}
           <div style={styles.topBar}>
             <button style={styles.backBtn} onClick={() => navigate(-1)}>
-              ← Back
+              Back
             </button>
-
             <div style={styles.brandBlock}>
               <div style={styles.brand}>VigilNet Dashboard</div>
               <div style={styles.header}>Historical Crowd Analytics</div>
               <div style={styles.subtitle}>
-                Upload model outputs as CSV and explore time-based crowd trends
-                for research, debugging, and reporting.
+                Upload model outputs as CSV and explore time-based crowd trends for research, debugging, and reporting.
               </div>
             </div>
           </div>
@@ -829,148 +756,92 @@ function Dashboard() {
           {/* THEORY CARD */}
           <div style={styles.theoryCard}>
             <div style={styles.theoryTitle}>Why this dashboard matters</div>
-            <div style={styles.theoryHeading}>
-              From raw CSV logs to decisions you can defend
-            </div>
+            <div style={styles.theoryHeading}>From raw CSV logs to decisions you can defend</div>
             <p style={styles.theoryText}>
-              VigilNet’s historical dashboard turns date + timestamp + count
-              logs into a visual narrative. You can zoom into a single day or
-              step back to see how whole months behave, spotting spikes, quiet
-              days, and recurring patterns.
+              VigilNet's historical dashboard turns <code>date,timestamp_ns,count,alert</code> logs into a visual narrative.
+              Zoom into a single day or step back to see how whole months behave, spotting spikes, quiet days, and recurring patterns.
             </p>
             <ul style={styles.theoryList}>
-              <li>
-                <strong>Day-wise:</strong> inspect how counts evolve within a
-                day (timestamp-wise, per-second, per-frame).
-              </li>
-              <li>
-                <strong>Month-wise:</strong> summarise how each day in a month
-                behaves using average, peak, and total crowd counts.
-              </li>
+              <li><strong>Day-wise:</strong> inspect how counts evolve within a day (timestamp-wise, per-second, distribution)</li>
+              <li><strong>Month-wise:</strong> summarise how each day in a month behaves using average, peak, and total crowd counts</li>
             </ul>
           </div>
 
           {/* MAIN ROW */}
           <div style={styles.mainRow}>
-            {/* LEFT COLUMN: HISTORY */}
+            {/* LEFT COLUMN - HISTORY */}
             <div style={styles.leftCol}>
               <div style={styles.historyCard}>
                 <div style={styles.historyTitle}>Upload history</div>
-                <div style={styles.historySub}>
-                  Recent CSV files processed on this dashboard.
-                </div>
-
+                <div style={styles.historySub}>Recent CSV files processed on this dashboard.</div>
                 {history.length === 0 ? (
                   <div style={styles.historyEmpty}>
-                    No files analyzed yet. Upload a CSV to start building your
-                    history.
+                    No files analyzed yet. Upload a CSV to start building your history.
                   </div>
                 ) : (
-                  <>
-                    <ul style={styles.historyList}>
-                      {history.map((item, idx) => (
-                        <li
-                          key={idx}
-                          style={{
-                            ...styles.historyItem,
-                            cursor: "pointer",
-                            backgroundColor:
-                              selectedHistory === item
-                                ? "rgba(15,23,42,0.8)"
-                                : "transparent",
-                          }}
-                          onClick={() => setSelectedHistory(item)}
-                        >
-                          <div style={styles.historyName}>{item.name}</div>
-                          <div style={styles.historyMeta}>
-                            {item.points} points · {item.uploadedAt}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-
-                    {selectedHistory && (
-                      <div
+                  <ul style={styles.historyList}>
+                    {history.map((item, idx) => (
+                      <li
+                        key={idx}
                         style={{
-                          marginTop: 10,
-                          paddingTop: 8,
-                          borderTop: "1px solid rgba(15,23,42,0.9)",
-                          fontSize: 12,
-                          color: "#9ca3af",
+                          ...styles.historyItem,
+                          cursor: 'pointer',
+                          backgroundColor: selectedHistory === item ? 'rgba(15,23,42,0.8)' : 'transparent',
                         }}
+                        onClick={() => setSelectedHistory(item)}
                       >
-                        <div>
-                          Min count:{" "}
-                          {selectedHistory.minCount?.toFixed
-                            ? selectedHistory.minCount.toFixed(2)
-                            : selectedHistory.minCount}
+                        <div style={styles.historyName}>{item.name}</div>
+                        <div style={styles.historyMeta}>
+                          {item.points} points • {item.uploadedAt}
                         </div>
-                        <div>
-                          Max count:{" "}
-                          {selectedHistory.maxCount?.toFixed
-                            ? selectedHistory.maxCount.toFixed(2)
-                            : selectedHistory.maxCount}
-                        </div>
-                        <div>Total points: {selectedHistory.points}</div>
-                      </div>
-                    )}
-                  </>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {selectedHistory && (
+                  <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(15,23,42,0.9)', fontSize: '12px', color: '#9ca3af' }}>
+                    <div>Min count: {selectedHistory.minCount?.toFixed ? selectedHistory.minCount.toFixed(2) : selectedHistory.minCount}</div>
+                    <div>Max count: {selectedHistory.maxCount?.toFixed ? selectedHistory.maxCount.toFixed(2) : selectedHistory.maxCount}</div>
+                    <div>Total points: {selectedHistory.points}</div>
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* RIGHT COLUMN: UPLOAD + GRAPHS */}
+            {/* RIGHT COLUMN - UPLOAD & GRAPHS */}
             <div style={styles.rightCol}>
-              {/* CSV Upload + Thresholds + View & Filters */}
+              {/* CSV Upload + Thresholds + View Filters */}
               <div style={styles.graphBox}>
                 <div style={styles.graphTitle}>Upload CSV file</div>
                 <div style={styles.graphSubtitle}>
-                  Expected format:&nbsp;
-                  <code>date, timestamp_ns, frame_index, count</code>
-                  <br />
-                  Or<br />
-                  <code>date, timestamp_ns, frame_index, count, alert</code>
-                  <br /><br />
-
-                  {/* Legend additions */}
-                  <span style={{ color: "#a855f7", fontWeight: "bold" }}>●</span>
-                  &nbsp;violet dot = lens_covered_or_extremely_dark
-                  <br />
-
-                  <span style={{ color: "#f97316", fontWeight: "bold" }}>●</span>
-                  &nbsp;orange dot = camera_frozen
+                  Expected format<br />
+                  <code>date,timestamp_ns,count,alert</code><br /><br />
+                  Legend additions:
+                  <span style={{ color: LENSALERT, fontWeight: 'bold' }}>  ●</span> violet dot = lens covered or extremely dark<br />
+                  <span style={{ color: FREEZEALERT, fontWeight: 'bold' }}>  ●</span> orange dot = camera frozen
                 </div>
-
-
-
-
                 <input
                   type="file"
                   accept=".csv"
                   onChange={(e) => setCsvFile(e.target.files[0])}
                   style={styles.fileInput}
                 />
-
-                <div style={{ display: "flex", gap: 10, marginTop: 5 }}>
-                  <button onClick={handleCSVUpload} style={styles.actionBtn}>
-                    {loading ? "Processing..." : "Upload & Process"}
+                <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+                  <button onClick={handleCSVUpload} style={styles.actionBtn} disabled={loading}>
+                    {loading ? 'Processing...' : 'Upload & Process'}
                   </button>
-
                   <button onClick={resetView} style={styles.resetBtn}>
-                    Clear / Refresh
+                    Clear & Refresh
                   </button>
                 </div>
-
                 {csvFile && (
-                  <div style={styles.selectedFile}>
-                    Selected file: {csvFile.name}
-                  </div>
+                  <div style={styles.selectedFile}>Selected file: {csvFile.name}</div>
                 )}
 
                 {/* Threshold controls */}
                 <div style={styles.thresholdRow}>
-                  <span>Thresholds:</span>
-                  <span>Min (safe start)</span>
+                  <span>Thresholds</span>
+                  <span>Min safe start</span>
                   <input
                     type="number"
                     step="0.01"
@@ -979,7 +850,7 @@ function Dashboard() {
                     style={styles.thresholdInput}
                     placeholder="e.g. 100"
                   />
-                  <span>Max (alert)</span>
+                  <span>Max alert</span>
                   <input
                     type="number"
                     step="0.01"
@@ -992,45 +863,38 @@ function Dashboard() {
 
                 {/* View mode toggle */}
                 <div style={styles.viewToggleRow}>
-                  <span>View mode:</span>
+                  <span>View mode</span>
                   <button
                     style={{
                       ...styles.viewToggleBtn,
-                      ...(viewMode === "day" ? styles.viewToggleBtnActive : {}),
+                      ...(viewMode === 'day' ? styles.viewToggleBtnActive : {}),
                     }}
                     onClick={() => {
-                      setViewMode("day");
-                      applyDateFilter(
-                        selectedDate,
-                        rawGraphData,
-                        rawPerSecondData,
-                        rawFrameSeries
-                      );
+                      setViewMode('day');
+                      applyDateFilter(selectedDate, rawGraphData, rawPerSecondData);
                     }}
                   >
                     Day-wise
                   </button>
-
                   <button
                     style={{
                       ...styles.viewToggleBtn,
-                      ...(viewMode === "month" ? styles.viewToggleBtnActive : {}),
+                      ...(viewMode === 'month' ? styles.viewToggleBtnActive : {}),
                     }}
                     onClick={() => {
-                      setViewMode("month");
+                      setViewMode('month');
                       applyMonthFilter(selectedMonth, rawGraphData);
                     }}
                   >
                     Month-wise
                   </button>
-
                   <button
                     style={{
                       ...styles.viewToggleBtn,
-                      ...(viewMode === "year" ? styles.viewToggleBtnActive : {}),
+                      ...(viewMode === 'year' ? styles.viewToggleBtnActive : {}),
                     }}
                     onClick={() => {
-                      setViewMode("year");
+                      setViewMode('year');
                       applyYearFilter(selectedYear, rawGraphData);
                     }}
                   >
@@ -1038,51 +902,36 @@ function Dashboard() {
                   </button>
                 </div>
 
-
                 {/* Day-wise vs Month-wise filters */}
-                {viewMode === "day" && availableDates.length > 0 && (
+                {viewMode === 'day' && availableDates.length > 0 && (
                   <div style={styles.thresholdRow}>
-                    <span>Filter by date:</span>
+                    <span>Filter by date</span>
                     <select
                       value={selectedDate}
                       onChange={(e) => {
                         const value = e.target.value;
                         setSelectedDate(value);
-                        applyDateFilter(
-                          value,
-                          rawGraphData,
-                          rawPerSecondData,
-                          rawFrameSeries
-                        );
+                        applyDateFilter(value, rawGraphData, rawPerSecondData);
                       }}
                       style={styles.dateSelect}
                     >
                       <option value="">All dates</option>
-                      {availableDates.map((d) => (
-                        <option key={d} value={d}>
-                          {d}
-                        </option>
+                      {availableDates.map(d => (
+                        <option key={d} value={d}>{d}</option>
                       ))}
                     </select>
                     <button
                       style={styles.filterBtn}
-                      onClick={() =>
-                        applyDateFilter(
-                          selectedDate,
-                          rawGraphData,
-                          rawPerSecondData,
-                          rawFrameSeries
-                        )
-                      }
+                      onClick={() => applyDateFilter(selectedDate, rawGraphData, rawPerSecondData)}
                     >
                       FILTER
                     </button>
                   </div>
                 )}
 
-                {viewMode === "month" && availableMonths.length > 0 && (
+                {viewMode === 'month' && availableMonths.length > 0 && (
                   <div style={styles.thresholdRow}>
-                    <span>Filter by month:</span>
+                    <span>Filter by month</span>
                     <select
                       value={selectedMonth}
                       onChange={(e) => {
@@ -1093,26 +942,22 @@ function Dashboard() {
                       style={styles.dateSelect}
                     >
                       <option value="">All months</option>
-                      {availableMonths.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
+                      {availableMonths.map(m => (
+                        <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
                     <button
                       style={styles.filterBtn}
-                      onClick={() =>
-                        applyMonthFilter(selectedMonth, rawGraphData)
-                      }
+                      onClick={() => applyMonthFilter(selectedMonth, rawGraphData)}
                     >
                       FILTER
                     </button>
                   </div>
                 )}
 
-                {viewMode === "year" && availableYears.length > 0 && (
+                {viewMode === 'year' && availableYears.length > 0 && (
                   <div style={styles.thresholdRow}>
-                    <span>Filter by year:</span>
+                    <span>Filter by year</span>
                     <select
                       value={selectedYear}
                       onChange={(e) => {
@@ -1123,10 +968,8 @@ function Dashboard() {
                       style={styles.dateSelect}
                     >
                       <option value="">All years</option>
-                      {availableYears.map((y) => (
-                        <option key={y} value={y}>
-                          {y}
-                        </option>
+                      {availableYears.map(y => (
+                        <option key={y} value={y}>{y}</option>
                       ))}
                     </select>
                     <button
@@ -1138,21 +981,13 @@ function Dashboard() {
                   </div>
                 )}
 
-
+                {/* Summary stats */}
                 {summary && (
                   <div style={styles.summaryRow}>
-                    <span style={styles.summaryChip}>
-                      Min count: {summary.min_count.toFixed(2)}
-                    </span>
-                    <span style={styles.summaryChip}>
-                      Max count: {summary.max_count.toFixed(2)}
-                    </span>
-                    <span style={styles.summaryChip}>
-                      Mean count: {summary.mean_count.toFixed(2)}
-                    </span>
-                    <span style={styles.summaryChip}>
-                      Points: {summary.num_points}
-                    </span>
+                    <span style={styles.summaryChip}>Min count: {summary.mincount.toFixed(2)}</span>
+                    <span style={styles.summaryChip}>Max count: {summary.maxcount.toFixed(2)}</span>
+                    <span style={styles.summaryChip}>Mean count: {summary.meancount.toFixed(2)}</span>
+                    <span style={styles.summaryChip}>Points: {summary.numpoints}</span>
                   </div>
                 )}
               </div>
@@ -1420,124 +1255,102 @@ function Dashboard() {
                     )}
                   </div>
 
-                  {/* DAY-WISE: GRAPH 3 */}
+                  {/* DAY-WISE GRAPH 3: NEW Count Distribution Histogram (replaces frame graph) */}
                   <div style={styles.graphBox}>
-                    <div style={styles.graphTitle}>
-                      Frame index vs crowd count (selected day)
-                    </div>
+                    <div style={styles.graphTitle}>Count distribution histogram (selected day)</div>
                     <div style={styles.graphSubtitle}>
-                      Helps you inspect how the model behaves frame by frame for
-                      the chosen day.
+                      Frequency of crowd counts in 10 bins. Reveals distribution patterns and outliers.
                     </div>
-
                     <button
                       style={styles.detailBtn}
-                      onClick={() => setShowFrameDetails((prev) => !prev)}
+                      onClick={() => setShowDistributionDetails(prev => !prev)}
                     >
-                      {showFrameDetails ? "Hide details" : "Show details"}
+                      {showDistributionDetails ? 'Hide details' : 'Show details'}
                     </button>
-
                     <div style={styles.graphArea}>
-                      {frameSeries.length === 0 ? (
+                      {distributionData.length === 0 ? (
                         <div style={styles.graphPlaceholder}>
-                          Upload a CSV and select a date to see frame-based
-                          trend.
+                          Upload a CSV and select a date to see count distribution.
                         </div>
                       ) : (
                         <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={frameSeries}>
+                          <BarChart data={distributionData}>
+                            <CartesianGrid strokeDasharray="3 3" />
                             <XAxis
-                              dataKey="frame_index"
-                              tick={{ fill: "#93c5fd", fontSize: 11 }}
-                              label={{
-                                value: "Frame index",
-                                position: "insideBottom",
-                                offset: -4,
-                                fill: "#6b7280",
-                                fontSize: 11,
-                              }}
+                              dataKey="range"
+                              tick={{ fill: '#93c5fd', fontSize: 11 }}
+                              label={{ value: 'Count Range', position: 'insideBottom', offset: -5, fill: '#6b7280', fontSize: 11 }}
                             />
                             <YAxis
-                              tick={{ fill: "#93c5fd", fontSize: 11 }}
-                              label={{
-                                value: "Count",
-                                angle: -90,
-                                position: "insideLeft",
-                                fill: "#6b7280",
-                                fontSize: 11,
-                              }}
+                              tick={{ fill: '#93c5fd', fontSize: 11 }}
+                              label={{ value: 'Frequency', angle: -90, position: 'insideLeft', fill: '#6b7280', fontSize: 11 }}
                             />
                             <Tooltip
                               contentStyle={{
-                                backgroundColor: "#020617",
-                                border: "1px solid #1e293b",
-                                borderRadius: 8,
-                                fontSize: 11,
+                                backgroundColor: '#020617',
+                                border: '1px solid #1e293b',
+                                borderRadius: '8px',
+                                fontSize: '11px',
                               }}
-                              labelStyle={{ color: "#e5e7eb" }}
+                              labelStyle={{ color: '#e5e7eb' }}
                             />
+                            <Legend />
+                            <Bar dataKey="frequency" name="Occurrences" fill="#60a5fa">
+                              {distributionData.map((entry, index) => {
+                                const v = entry.count;
+                                let fillColor = '#60a5fa';
+                                if (thresholdsActive) {
+                                  if (v > parsedMax) fillColor = RED;
+                                  else if (v >= parsedMin && v <= parsedMax) fillColor = GREEN;
+                                  else fillColor = AMBER;
+                                }
+                                return <Cell key={`dist-${index}`} fill={fillColor} />;
+                              })}
+                            </Bar>
                             {thresholdsActive && (
                               <>
-                                <ReferenceLine
-                                  y={parsedMin}
-                                  stroke={GREEN}
-                                  strokeDasharray="3 3"
-                                />
-                                <ReferenceLine
-                                  y={parsedMax}
-                                  stroke={RED}
-                                  strokeDasharray="3 3"
-                                />
+                                <ReferenceLine y={parsedMin} stroke={GREEN} strokeDasharray="3 3" label={{ position: 'top' }} />
+                                <ReferenceLine y={parsedMax} stroke={RED} strokeDasharray="3 3" label={{ position: 'top' }} />
                               </>
                             )}
-                            <Line
-                              type="monotone"
-                              dataKey="count"
-                              stroke={CYAN}
-                              strokeWidth={2}
-                              dot={(props) => renderColoredDot(props)}
-                              activeDot={{ r: 5 }}
-                            />
-                          </LineChart>
+                          </BarChart>
                         </ResponsiveContainer>
                       )}
                     </div>
-
-                    {showFrameDetails && thresholdsActive && (
+                    {showDistributionDetails && thresholdsActive && (
                       <div style={styles.detailPanel}>
-                        <div style={styles.detailSectionTitle}>
-                          Alert frames (count &gt; max)
-                        </div>
-                        {getFrameAlerts().length === 0 ? (
-                          <div>No alert frames.</div>
+                        <div style={styles.detailSectionTitle}>Alert bins (avg count &gt; max)</div>
+                        {getDistributionAlerts().length === 0 ? (
+                          <div>No alert bins.</div>
                         ) : (
-                          getFrameAlerts().map((p, idx) => (
-                            <div key={`fa-${idx}`}>
-                              date = {p.date}, frame = {p.frame_index}, count ={" "}
-                              {p.count.toFixed(3)}
+                          getDistributionAlerts().map((d, idx) => (
+                            <div key={`da-${idx}`}>
+                              range = {d.range}, freq = {d.frequency}, avg ={" "}
+                              {d.count.toFixed(1)}
                             </div>
                           ))
                         )}
+
                         <div style={styles.detailSectionTitle}>
-                          Safe frames (between min &amp; max)
+                          Safe bins (avg between min &amp; max)
                         </div>
-                        {getFrameSafe().length === 0 ? (
-                          <div>No safe frames for current thresholds.</div>
+                        {getDistributionSafe().length === 0 ? (
+                          <div>No safe bins for current thresholds.</div>
                         ) : (
-                          getFrameSafe().map((p, idx) => (
-                            <div key={`fs-${idx}`}>
-                              date = {p.date}, frame = {p.frame_index}, count ={" "}
-                              {p.count.toFixed(3)}
+                          getDistributionSafe().map((d, idx) => (
+                            <div key={`ds-${idx}`}>
+                              range = {d.range}, freq = {d.frequency}, avg ={" "}
+                              {d.count.toFixed(1)}
                             </div>
                           ))
                         )}
                       </div>
                     )}
+
                   </div>
                 </>
               ) : viewMode === "month" ? (
                 <>
-                  {/* MONTH-WISE: GRAPH 1 - Day vs avg count */}
                   {/* MONTH-WISE: GRAPH 1 - Day vs avg_count */}
                   <div style={styles.graphBox}>
                     <div style={styles.graphTitle}>
@@ -2191,9 +2004,9 @@ function Dashboard() {
             </div>
           </div>
         </div>
-      </div >
-    </>
-  );
+      </div>
+    );
+  }
 }
-
 export default Dashboard;
+

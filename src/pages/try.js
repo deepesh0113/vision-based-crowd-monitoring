@@ -5708,3 +5708,6425 @@ export default Dashboard;
 #     return JSONResponse({"csv": csv_text, "done": done})
 
 
+// main.py 
+// from fastapi import FastAPI, UploadFile, File
+// from fastapi.middleware.cors import CORSMiddleware
+// import pandas as pd
+// from io import BytesIO
+
+// # app = FastAPI()
+// app = FastAPI(title="Dashboard API")
+
+// app.add_middleware(
+//     CORSMiddleware,
+//     allow_origins=["*"],  # for local dev; restrict in production
+//     allow_credentials=True,
+//     allow_methods=["*"],
+//     allow_headers=["*"],
+// )
+
+
+// def convert_timestamp_to_seconds(value, unit_hint="ms"):
+//     """
+//     Supports:
+//     1) 'MM:SS:MS' or 'MM:SS'      -> '00:03:600', '00:03'
+//     2) plain number:
+//        - if unit_hint == 'ns'     -> treat as nanoseconds
+//        - otherwise (ms)           -> treat as milliseconds
+//     """
+//     try:
+//         s = str(value).strip()
+
+//         # Case 1: "MM:SS:MS" or "MM:SS"
+//         if ":" in s:
+//             parts = s.split(":")
+//             if len(parts) == 3:  # MM:SS:MS
+//                 minutes = int(parts[0])
+//                 seconds = int(parts[1])
+//                 millis = int(parts[2])
+//                 return minutes * 60 + seconds + millis / 1000.0
+//             if len(parts) == 2:  # MM:SS
+//                 minutes = int(parts[0])
+//                 seconds = int(parts[1])
+//                 return minutes * 60 + seconds
+//             return None
+
+//         # Case 2: plain number
+//         val = float(s)
+//         if unit_hint == "ns":
+//             return val / 1e9
+//         else:  # default ms
+//             return val / 1000.0
+
+//     except Exception as e:
+//         print("Timestamp parse error for:", value, "->", e)
+//         return None
+
+
+// @app.post("/upload-csv")
+// async def upload_csv(file: UploadFile = File(...)):
+//     """
+//     Accepts CSV with at least:
+//       - date
+//       - one of: timestamp_ms, timestamp_ns, time_stamp
+//       - one of: frame_index, frame
+//       - one of: count, cout
+
+//     May also contain:
+//       - alert (e.g. 'lens_covered_or_extremely_dark', 'camera_frozen')
+
+//     Returns:
+//       - records      -> [{ date, timestamp, count, (optional) alert }]
+//       - time_series  -> [{ date, time_sec, count, (optional) alert }]
+//       - per_second   -> [{ date, second, avg_count }]
+//       - frame_series -> [{ date, frame_index, count, (optional) alert }]
+//       - summary      -> stats
+//     """
+//     try:
+//         raw = await file.read()
+
+//         try:
+//             df = pd.read_csv(BytesIO(raw))
+//         except Exception as e:
+//             print("read_csv error:", e)
+//             return {
+//                 "status": "error",
+//                 "message": f"Failed to read CSV: {e}",
+//                 "records": [],
+//             }
+
+//         cols = set(df.columns)
+//         print("CSV columns:", list(df.columns))
+
+//         # ---- figure out which columns to use (flexible) ----
+//         if "date" not in cols:
+//             return {
+//                 "status": "error",
+//                 "message": "CSV must contain a 'date' column.",
+//                 "records": [],
+//             }
+
+//         # timestamp column & unit
+//         timestamp_col = None
+//         unit_hint = "ms"
+//         for cand, hint in [
+//             ("timestamp_ms", "ms"),
+//             ("timestamp_ns", "ns"),
+//             ("time_stamp", "ms"),  # your older name
+//             ("timestamp", "ms"),
+//         ]:
+//             if cand in cols:
+//                 timestamp_col = cand
+//                 unit_hint = hint
+//                 break
+
+//         if timestamp_col is None:
+//             return {
+//                 "status": "error",
+//                 "message": (
+//                     "CSV must contain one timestamp column: "
+//                     "timestamp_ms OR timestamp_ns OR time_stamp."
+//                 ),
+//                 "records": [],
+//             }
+
+//         # frame index column
+//         frame_col = None
+//         for cand in ["frame_index", "frame"]:
+//             if cand in cols:
+//                 frame_col = cand
+//                 break
+
+//         if frame_col is None:
+//             return {
+//                 "status": "error",
+//                 "message": (
+//                     "CSV must contain frame column: frame_index OR frame."
+//                 ),
+//                 "records": [],
+//             }
+
+//         # count column
+//         count_col = None
+//         for cand in ["count", "cout"]:
+//             if cand in cols:
+//                 count_col = cand
+//                 break
+
+//         if count_col is None:
+//             return {
+//                 "status": "error",
+//                 "message": (
+//                     "CSV must contain count column: count OR cout."
+//                 ),
+//                 "records": [],
+//             }
+
+//         # optional alert
+//         has_alert = "alert" in cols
+//         if has_alert:
+//             df["alert"] = df["alert"].astype(str).fillna("")
+
+//         # normalize date
+//         df["date"] = df["date"].astype(str)
+
+//         # ---- convert timestamp -> seconds ----
+//         df["time_sec"] = df[timestamp_col].apply(
+//             lambda v: convert_timestamp_to_seconds(v, unit_hint)
+//         )
+
+//         if df["time_sec"].isna().all():
+//             return {
+//                 "status": "error",
+//                 "message": (
+//                     "No valid rows after timestamp conversion. "
+//                     f"Check the format of {timestamp_col}."
+//                 ),
+//                 "records": [],
+//             }
+
+//         df = df.dropna(subset=["time_sec"])
+
+//         # ---------- 1) time series ----------
+//         ts_cols = ["date", "time_sec", count_col]
+//         if has_alert:
+//             ts_cols.append("alert")
+//         time_series_df = df[ts_cols].copy()
+//         time_series_df.rename(columns={count_col: "count"}, inplace=True)
+//         time_series = time_series_df.to_dict(orient="records")
+
+//         # ---------- 2) per-second average ----------
+//         df["sec_bucket"] = df["time_sec"].astype(int)
+//         per_second_df = (
+//             df.groupby(["date", "sec_bucket"])[count_col]
+//             .mean()
+//             .reset_index()
+//             .rename(columns={"sec_bucket": "second", count_col: "avg_count"})
+//         )
+//         per_second = per_second_df.to_dict(orient="records")
+
+//         # ---------- 3) frame vs count ----------
+//         fs_cols = ["date", frame_col, count_col]
+//         if has_alert:
+//             fs_cols.append("alert")
+//         frame_series_df = df[fs_cols].copy()
+//         frame_series_df.rename(
+//             columns={frame_col: "frame_index", count_col: "count"},
+//             inplace=True,
+//         )
+//         frame_series = frame_series_df.to_dict(orient="records")
+
+//         # ---------- summary ----------
+//         summary = {
+//             "min_count": float(df[count_col].min()),
+//             "max_count": float(df[count_col].max()),
+//             "mean_count": float(df[count_col].mean()),
+//             "num_points": int(len(df)),
+//         }
+
+//         # ---------- records for frontend ----------
+//         records = []
+//         for _, row in time_series_df.iterrows():
+//             rec = {
+//                 "date": row["date"],
+//                 "timestamp": float(row["time_sec"]),
+//                 "count": float(row["count"]),
+//             }
+//             if has_alert:
+//                 rec["alert"] = row["alert"]
+//             records.append(rec)
+
+//         print("Processed rows:", len(records))
+//         return {
+//             "status": "success",
+//             "records": records,
+//             "time_series": time_series,
+//             "per_second": per_second,
+//             "frame_series": frame_series,
+//             "summary": summary,
+//         }
+
+//     except Exception as e:
+//         print("Unexpected server error:", e)
+//         return {
+//             "status": "error",
+//             "message": f"Failed to process CSV: {e}",
+//             "records": [],
+//         }
+
+
+
+// Dashboard.js code
+// import React, { useState, useEffect } from "react";
+// import { useNavigate } from "react-router-dom";
+// import {
+//   LineChart,
+//   Line,
+//   XAxis,
+//   YAxis,
+//   Tooltip,
+//   ResponsiveContainer,
+//   BarChart,
+//   Bar,
+//   CartesianGrid,
+//   Legend,
+//   Cell,
+//   ReferenceLine,
+// } from "recharts";
+
+// function useWindowWidth() {
+//   const [width, setWidth] = useState(window.innerWidth);
+//   useEffect(() => {
+//     const handleResize = () => setWidth(window.innerWidth);
+//     window.addEventListener("resize", handleResize);
+//     return () => window.removeEventListener("resize", handleResize);
+//   }, []);
+//   return width;
+// }
+
+// function Dashboard() {
+//   const navigate = useNavigate();
+
+//   const [csvFile, setCsvFile] = useState(null);
+
+//   // filtered data used by day-wise graphs
+//   const [graphData, setGraphData] = useState([]); // time-series records
+//   const [perSecondData, setPerSecondData] = useState([]);
+//   const [frameSeries, setFrameSeries] = useState([]);
+//   const [summary, setSummary] = useState(null);
+
+//   // raw (unfiltered) data for filters
+//   const [rawGraphData, setRawGraphData] = useState([]);
+//   const [rawPerSecondData, setRawPerSecondData] = useState([]);
+//   const [rawFrameSeries, setRawFrameSeries] = useState([]);
+
+//   // day-wise filter
+//   const [availableDates, setAvailableDates] = useState([]);
+//   const [selectedDate, setSelectedDate] = useState("");
+
+//   // month-wise filter
+//   const [availableMonths, setAvailableMonths] = useState([]);
+//   const [selectedMonth, setSelectedMonth] = useState("");
+//   const [monthDailyData, setMonthDailyData] = useState([]); // aggregated per day for month view
+
+//   // view mode: "day" or "month"
+//   const [viewMode, setViewMode] = useState("day");
+
+//   const [loading, setLoading] = useState(false);
+//   const [history, setHistory] = useState([]); // left-side history
+//   const [selectedHistory, setSelectedHistory] = useState(null);
+
+//   // thresholds
+//   const [minThreshold, setMinThreshold] = useState("");
+//   const [maxThreshold, setMaxThreshold] = useState("");
+
+//   // details toggles
+//   const [showTimeDetails, setShowTimeDetails] = useState(false);
+//   const [showPerSecondDetails, setShowPerSecondDetails] = useState(false);
+//   const [showFrameDetails, setShowFrameDetails] = useState(false);
+
+
+//   // year-wise filter
+//   const [availableYears, setAvailableYears] = useState([]);
+//   const [selectedYear, setSelectedYear] = useState("");
+//   const [yearMonthlyData, setYearMonthlyData] = useState([]); // aggregated per month for year view
+
+//   const [showMonthDetails, setShowMonthDetails] = useState(false);
+//   const [showYearDetails, setShowYearDetails] = useState(false);
+//   const [showMonthDetails2, setShowMonthDetails2] = useState(false);
+//   const [showMonthDetails3, setShowMonthDetails3] = useState(false);
+//   const [showYearDetails2, setShowYearDetails2] = useState(false);
+//   const [showYearDetails3, setShowYearDetails3] = useState(false);
+
+
+
+//   const width = useWindowWidth();
+//   const isMobile = width < 700;
+
+//   // parsed thresholds
+//   const parsedMin = parseFloat(minThreshold);
+//   const parsedMax = parseFloat(maxThreshold);
+//   const thresholdsActive =
+//     !Number.isNaN(parsedMin) && !Number.isNaN(parsedMax);
+
+//   // Theme colors
+//   const BG = "#020617";
+//   const BLUE = "#3b82f6";
+//   const CYAN = "#0ea5e9";
+//   const GREEN = "#22c55e";
+//   const RED = "#ef4444";
+//   const AMBER = "#facc15";
+//   const LENS_ALERT = "#a855f7";   // violet for lens_covered_or_extremely_dark
+//   const FREEZE_ALERT = "#f97316"; // orange for camera_frozen
+
+
+//   const styles = {
+//     page: {
+//       minHeight: "100vh",
+//       backgroundColor: BG,
+//       fontFamily:
+//         "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+//       display: "flex",
+//       justifyContent: "center",
+//       padding: isMobile ? "18px 4vw 32px" : "28px 28px 40px",
+//       boxSizing: "border-box",
+//     },
+//     content: {
+//       width: "100%",
+//       maxWidth: 1120,
+//       display: "flex",
+//       flexDirection: "column",
+//       gap: isMobile ? 16 : 20,
+//       animation: "fadeIn 0.5s ease-in",
+//     },
+//     topBar: {
+//       display: "flex",
+//       alignItems: "center",
+//       justifyContent: "flex-start",
+//       gap: 16,
+//       flexWrap: "wrap",
+//     },
+//     backBtn: {
+//       borderRadius: 999,
+//       border: "1px solid #1e293b",
+//       backgroundColor: "transparent",
+//       color: "#9ca3af",
+//       padding: "7px 16px",
+//       fontSize: 13,
+//       cursor: "pointer",
+//     },
+//     brandBlock: {
+//       display: "flex",
+//       flexDirection: "column",
+//       gap: 2,
+//       textAlign: "left",
+//     },
+//     brand: {
+//       fontSize: 11,
+//       textTransform: "uppercase",
+//       letterSpacing: "0.23em",
+//       color: "#6b7280",
+//     },
+//     header: {
+//       fontWeight: 600,
+//       fontSize: isMobile ? "1.25rem" : "1.6rem",
+//       color: "#e5e7eb",
+//     },
+//     subtitle: {
+//       fontSize: 12,
+//       color: "#9ca3af",
+//     },
+
+//     theoryCard: {
+//       background: "radial-gradient(circle at top left, #020617, #020617 60%)",
+//       borderRadius: 18,
+//       padding: isMobile ? "14px 14px" : "18px 18px",
+//       boxShadow: "0 24px 52px rgba(15,23,42,0.9)",
+//       border: "1px solid #111827",
+//     },
+//     theoryTitle: {
+//       fontSize: 14,
+//       textTransform: "uppercase",
+//       letterSpacing: "0.18em",
+//       color: "#9ca3af",
+//       marginBottom: 8,
+//     },
+//     theoryHeading: {
+//       fontSize: 15,
+//       fontWeight: 600,
+//       color: "#e5e7eb",
+//       marginBottom: 8,
+//     },
+//     theoryText: {
+//       fontSize: 13,
+//       color: "#9ca3af",
+//       lineHeight: 1.65,
+//     },
+//     theoryList: {
+//       marginTop: 10,
+//       paddingLeft: 18,
+//       fontSize: 13,
+//       color: "#9ca3af",
+//       lineHeight: 1.6,
+//     },
+
+//     mainRow: {
+//       display: "flex",
+//       flexDirection: isMobile ? "column" : "row",
+//       gap: 18,
+//       alignItems: "flex-start",
+//     },
+//     leftCol: {
+//       flex: isMobile ? "unset" : "0 0 280px",
+//       width: isMobile ? "100%" : 280,
+//       display: "flex",
+//       flexDirection: "column",
+//       gap: 14,
+//     },
+//     rightCol: {
+//       flex: 1,
+//       display: "flex",
+//       flexDirection: "column",
+//       gap: 14,
+//     },
+
+//     historyCard: {
+//       background: "radial-gradient(circle at top, #020617, #020617 70%)",
+//       borderRadius: 18,
+//       padding: isMobile ? "14px 14px" : "16px 16px",
+//       boxShadow: "0 22px 50px rgba(15,23,42,0.9)",
+//       border: "1px solid #111827",
+//     },
+//     historyTitle: {
+//       fontSize: 14,
+//       color: "#93c5fd",
+//       fontWeight: 600,
+//       marginBottom: 6,
+//     },
+//     historySub: {
+//       fontSize: 12,
+//       color: "#6b7280",
+//       marginBottom: 10,
+//     },
+//     historyList: {
+//       margin: 0,
+//       padding: 0,
+//       listStyle: "none",
+//       maxHeight: 260,
+//       overflowY: "auto",
+//     },
+//     historyItem: {
+//       padding: "7px 0",
+//       borderBottom: "1px solid rgba(15,23,42,0.9)",
+//     },
+//     historyName: {
+//       fontSize: 13,
+//       color: "#e5e7eb",
+//       marginBottom: 2,
+//       wordBreak: "break-all",
+//     },
+//     historyMeta: {
+//       fontSize: 11,
+//       color: "#9ca3af",
+//     },
+//     historyEmpty: {
+//       fontSize: 12,
+//       color: "#6b7280",
+//       marginTop: 6,
+//     },
+
+//     graphBox: {
+//       background: "radial-gradient(circle at top right, #020617, #020617 70%)",
+//       borderRadius: 18,
+//       border: "1px solid #111827",
+//       boxShadow: "0 24px 52px rgba(15,23,42,0.95)",
+//       padding: isMobile ? "16px 12px 20px" : "18px 18px 24px",
+//       display: "flex",
+//       flexDirection: "column",
+//       gap: 10,
+//     },
+//     graphTitle: {
+//       fontSize: 14,
+//       color: BLUE,
+//       fontWeight: 600,
+//     },
+//     graphSubtitle: {
+//       fontSize: 12,
+//       color: "#6b7280",
+//     },
+//     fileInput: {
+//       marginTop: 8,
+//       marginBottom: 10,
+//       padding: 7,
+//       borderRadius: 10,
+//       background: BG,
+//       color: "#e5e7eb",
+//       border: "1px solid #111827",
+//       fontSize: 13,
+//     },
+//     resetBtn: {
+//       backgroundColor: "#10b981",
+//       color: "#fff",
+//       padding: "8px 20px",
+//       borderRadius: 999,
+//       cursor: "pointer",
+//       border: "none",
+//       fontWeight: 600,
+//     },
+//     actionBtn: {
+//       backgroundColor: CYAN,
+//       color: "#0b1120",
+//       cursor: "pointer",
+//       border: "none",
+//       fontWeight: 600,
+//       padding: "7px 16px",
+//       borderRadius: 999,
+//       fontSize: 13,
+//     },
+//     selectedFile: {
+//       marginTop: 8,
+//       fontSize: 12,
+//       color: "#93c5fd",
+//       wordBreak: "break-all",
+//     },
+
+//     graphArea: {
+//       width: "100%",
+//       height: 320,
+//       marginTop: 4,
+//     },
+//     graphPlaceholder: {
+//       flex: 1,
+//       display: "flex",
+//       alignItems: "center",
+//       justifyContent: "center",
+//       fontSize: 13,
+//       color: CYAN,
+//       borderRadius: 12,
+//       border: "1px dashed #1e293b",
+//     },
+//     summaryRow: {
+//       display: "flex",
+//       flexWrap: "wrap",
+//       gap: 10,
+//       fontSize: 12,
+//       color: "#9ca3af",
+//       marginTop: 4,
+//     },
+//     summaryChip: {
+//       padding: "4px 10px",
+//       borderRadius: 999,
+//       border: "1px solid #1e293b",
+//     },
+//     thresholdRow: {
+//       display: "flex",
+//       flexWrap: "wrap",
+//       gap: 8,
+//       marginTop: 10,
+//       alignItems: "center",
+//       fontSize: 12,
+//       color: "#9ca3af",
+//     },
+//     thresholdInput: {
+//       width: 90,
+//       padding: "4px 8px",
+//       borderRadius: 999,
+//       border: "1px solid #1f2937",
+//       backgroundColor: "#020617",
+//       color: "#e5e7eb",
+//       fontSize: 12,
+//       outline: "none",
+//     },
+//     detailBtn: {
+//       alignSelf: "flex-end",
+//       marginTop: 4,
+//       padding: "4px 10px",
+//       fontSize: 11,
+//       borderRadius: 999,
+//       border: "1px solid #1f2937",
+//       backgroundColor: "#020617",
+//       color: "#9ca3af",
+//       cursor: "pointer",
+//     },
+//     detailPanel: {
+//       marginTop: 8,
+//       padding: "8px 10px",
+//       borderRadius: 12,
+//       border: "1px solid #1f2937",
+//       backgroundColor: "#020617",
+//       fontSize: 11,
+//       maxHeight: 160,
+//       overflowY: "auto",
+//       lineHeight: 1.5,
+//     },
+//     detailSectionTitle: {
+//       fontWeight: 600,
+//       marginTop: 4,
+//       marginBottom: 2,
+//       fontSize: 11,
+//     },
+//     dateSelect: {
+//       padding: "4px 8px",
+//       borderRadius: 999,
+//       border: "1px solid #1f2937",
+//       backgroundColor: "#020617",
+//       color: "#e5e7eb",
+//       fontSize: 12,
+//       outline: "none",
+//     },
+//     filterBtn: {
+//       backgroundColor: BLUE,
+//       color: "#f9fafb",
+//       border: "none",
+//       borderRadius: 999,
+//       padding: "6px 14px",
+//       fontSize: 12,
+//       cursor: "pointer",
+//       fontWeight: 500,
+//     },
+//     viewToggleRow: {
+//       display: "flex",
+//       flexWrap: "wrap",
+//       gap: 8,
+//       marginTop: 10,
+//       alignItems: "center",
+//       fontSize: 12,
+//       color: "#9ca3af",
+//     },
+//     viewToggleBtn: {
+//       padding: "5px 12px",
+//       borderRadius: 999,
+//       border: "1px solid #1f2937",
+//       backgroundColor: "#020617",
+//       color: "#9ca3af",
+//       fontSize: 12,
+//       cursor: "pointer",
+//     },
+//     viewToggleBtnActive: {
+//       backgroundColor: BLUE,
+//       color: "#f9fafb",
+//       borderColor: BLUE,
+//     },
+//   };
+
+//   // custom dot renderer for line charts based on thresholds
+//   // const renderColoredDot = (props) => {
+//   //   const { cx, cy, payload } = props;
+//   //   const value = payload.count;
+//   //   let fill = "#60a5fa";
+
+//   //   if (thresholdsActive) {
+//   //     if (value > parsedMax) fill = RED; // alert
+//   //     else if (value >= parsedMin && value <= parsedMax) fill = GREEN; // safe
+//   //     else fill = AMBER; // below min
+//   //   }
+
+//   //   return (
+//   //     <circle cx={cx} cy={cy} r={3} fill={fill} stroke={BG} strokeWidth={1} />
+//   //   );
+//   // };
+//   // custom dot renderer for line charts based on thresholds + alert type
+//   const renderColoredDot = (props) => {
+//     const { cx, cy, payload } = props;
+//     const value = payload.count;
+
+//     // alert can be: "lens_covered_or_extremely_dark", "camera_frozen", or empty/undefined
+//     const alertType = payload.alert ? String(payload.alert).trim() : "";
+
+//     let fill = "#60a5fa"; // default blue-ish
+//     let radius = 3;
+
+//     if (alertType === "lens_covered_or_extremely_dark") {
+//       // camera covered / extremely dark -> violet dot
+//       fill = LENS_ALERT;
+//       radius = 5;
+//     } else if (alertType === "camera_frozen") {
+//       // camera frozen -> orange dot
+//       fill = FREEZE_ALERT;
+//       radius = 5;
+//     } else if (thresholdsActive) {
+//       // fallback to threshold-based coloring if no explicit alert
+//       if (value > parsedMax) fill = RED; // alert
+//       else if (value >= parsedMin && value <= parsedMax) fill = GREEN; // safe
+//       else fill = AMBER; // below min
+//     }
+
+//     return (
+//       <circle
+//         cx={cx}
+//         cy={cy}
+//         r={radius}
+//         fill={fill}
+//         stroke={BG}
+//         strokeWidth={1}
+//       />
+//     );
+//   };
+
+
+//   // ---------- Filter helpers ----------
+
+//   // Day-wise filter: single date
+//   const applyDateFilter = (date, recordsSrc, perSecondSrc, frameSrc) => {
+//     if (!date) {
+//       setGraphData(recordsSrc);
+//       setPerSecondData(perSecondSrc);
+//       setFrameSeries(frameSrc);
+//       return;
+//     }
+
+//     const filteredRecords = recordsSrc.filter((r) => r.date === date);
+//     const filteredPerSecond = perSecondSrc.filter((r) => r.date === date);
+//     const filteredFrame = frameSrc.filter((r) => r.date === date);
+
+//     setGraphData(filteredRecords);
+//     setPerSecondData(filteredPerSecond);
+//     setFrameSeries(filteredFrame);
+//   };
+
+//   // Month-wise filter: aggregate per date inside selected month
+//   const applyMonthFilter = (monthKey, recordsSrc) => {
+//     if (!monthKey) {
+//       setMonthDailyData([]);
+//       return;
+//     }
+
+//     // recordsSrc has { date, timestamp, count }
+//     const monthRecords = recordsSrc.filter(
+//       (r) => r.date && r.date.startsWith(monthKey)
+//     );
+
+//     const dayMap = {};
+
+//     monthRecords.forEach((r) => {
+//       const d = r.date; // "YYYY-MM-DD"
+//       if (!dayMap[d]) {
+//         dayMap[d] = {
+//           date: d,
+//           dayLabel: d.slice(8, 10),
+//           total: 0,
+//           max: -Infinity,
+//           n: 0,
+//         };
+//       }
+//       dayMap[d].total += r.count;
+//       dayMap[d].max = Math.max(dayMap[d].max, r.count);
+//       dayMap[d].n += 1;
+//     });
+
+//     const dailyArr = Object.values(dayMap)
+//       .map((d) => ({
+//         date: d.date,
+//         day: d.dayLabel,
+//         avg_count: d.total / d.n,
+//         max_count: d.max,
+//         total_count: d.total,
+//       }))
+//       .sort((a, b) => a.date.localeCompare(b.date));
+
+//     setMonthDailyData(dailyArr);
+//   };
+
+
+//   // Year-wise filter: aggregate per month inside selected year
+//   const applyYearFilter = (yearKey, recordsSrc) => {
+//     if (!yearKey) {
+//       setYearMonthlyData([]);
+//       return;
+//     }
+
+//     // recordsSrc has { date, timestamp, count }
+//     const yearRecords = recordsSrc.filter(
+//       (r) => r.date && r.date.startsWith(yearKey)
+//     );
+
+//     const monthMap = {};
+//     yearRecords.forEach((r) => {
+//       // monthKey = "YYYY-MM"
+//       const monthKey = r.date.slice(0, 7);
+//       const shortMonth = monthKey.slice(5, 7); // "01", "02", ...
+
+//       if (!monthMap[monthKey]) {
+//         monthMap[monthKey] = {
+//           month: shortMonth, // for x-axis
+//           monthLabel: monthKey, // full "YYYY-MM"
+//           total: 0,
+//           max: -Infinity,
+//           n: 0,
+//         };
+//       }
+//       monthMap[monthKey].total += r.count;
+//       monthMap[monthKey].max = Math.max(monthMap[monthKey].max, r.count);
+//       monthMap[monthKey].n += 1;
+//     });
+
+//     const monthlyArr = Object.values(monthMap)
+//       .map((m) => ({
+//         month: m.month,
+//         monthLabel: m.monthLabel,
+//         avg_count: m.total / m.n,
+//         max_count: m.max,
+//         total_count: m.total,
+//       }))
+//       .sort((a, b) => a.monthLabel.localeCompare(b.monthLabel));
+
+//     setYearMonthlyData(monthlyArr);
+//   };
+
+
+//   // ---------- Upload handler ----------
+
+//   const handleCSVUpload = async () => {
+//     if (!csvFile) {
+//       alert("Please select a CSV file first!");
+//       return;
+//     }
+
+//     const formData = new FormData();
+//     formData.append("file", csvFile);
+
+//     setLoading(true);
+
+//     try {
+//       // const res = await fetch("http://127.0.0.1:8000/upload-csv", {
+//       //   method: "POST",
+//       //   body: formData,
+//       // });
+//       const res = await fetch("http://127.0.0.1:8000/dashboard/upload-csv", {
+//         method: "POST",
+//         body: formData,
+//       });
+
+
+//       const data = await res.json();
+
+//       if (data.status === "error") {
+//         alert(data.message || "Error processing CSV");
+//         setLoading(false);
+//         return;
+//       }
+
+//       const records = data.records || [];
+//       const perSecondAll = data.per_second || [];
+//       const frameAll = data.frame_series || [];
+//       const summaryObj = data.summary || null;
+
+//       // store raw (unfiltered)
+//       setRawGraphData(records);
+//       setRawPerSecondData(perSecondAll);
+//       setRawFrameSeries(frameAll);
+
+//       // collect unique dates from records
+//       const uniqueDates = Array.from(
+//         new Set(records.map((r) => r.date).filter(Boolean))
+//       );
+//       setAvailableDates(uniqueDates);
+//       const initialDate = uniqueDates[0] || "";
+//       setSelectedDate(initialDate);
+
+//       // collect unique months from records (YYYY-MM)
+//       const uniqueMonths = Array.from(
+//         new Set(
+//           records
+//             .map((r) => (r.date ? r.date.slice(0, 7) : null))
+//             .filter(Boolean)
+//         )
+//       );
+//       const uniqueYears = Array.from(
+//         new Set(
+//           records
+//             .map((r) => (r.date ? r.date.slice(0, 4) : null))
+//             .filter(Boolean)
+//         )
+//       );
+//       uniqueYears.sort();
+//       setAvailableYears(uniqueYears);
+
+//       const initialYear = uniqueYears[0] || "";
+//       setSelectedYear(initialYear);
+//       uniqueMonths.sort();
+//       setAvailableMonths(uniqueMonths);
+//       const initialMonth = uniqueMonths[0] || "";
+//       setSelectedMonth(initialMonth);
+
+
+
+
+//       // default to day view
+//       setViewMode("day");
+
+//       // apply initial day filter
+//       applyDateFilter(initialDate, records, perSecondAll, frameAll);
+
+//       // compute month aggregation for initial month (for when user switches view)
+//       applyMonthFilter(initialMonth, records);
+
+//       applyYearFilter(initialYear, records);
+
+//       setSummary(summaryObj);
+
+//       // ---- History entry ----
+//       const minVal =
+//         summaryObj && typeof summaryObj.min_count !== "undefined"
+//           ? summaryObj.min_count
+//           : "—";
+
+//       const maxVal =
+//         summaryObj && typeof summaryObj.max_count !== "undefined"
+//           ? summaryObj.max_count
+//           : "—";
+
+//       const newHistoryItem = {
+//         name: csvFile.name,
+//         uploadedAt: new Date().toLocaleString(),
+//         points: records.length,
+//         minCount: minVal,
+//         maxCount: maxVal,
+//       };
+
+//       setHistory((prev) => [newHistoryItem, ...prev]);
+//       setSelectedHistory(newHistoryItem);
+//     } catch (err) {
+//       console.error("Error:", err);
+//       alert("Failed to upload CSV");
+//     }
+
+//     setLoading(false);
+//   };
+
+
+//   const resetView = () => {
+//     setCsvFile(null);
+//     setGraphData([]);
+//     setPerSecondData([]);
+//     setFrameSeries([]);
+//     setSummary(null);
+//     setMinThreshold("");
+//     setMaxThreshold("");
+//     setShowTimeDetails(false);
+//     setShowPerSecondDetails(false);
+//     setShowFrameDetails(false);
+
+//     setRawGraphData([]);
+//     setRawPerSecondData([]);
+//     setRawFrameSeries([]);
+//     setAvailableDates([]);
+//     setSelectedDate("");
+//     setAvailableMonths([]);
+//     setSelectedMonth("");
+//     setMonthDailyData([]);
+//     setViewMode("day");
+//     setTimeout(() => {
+//       window.location.reload();
+//     }, 150);
+//   };
+
+//   // ---------- helpers for detail panels ----------
+
+//   const getTimeAlerts = () =>
+//     thresholdsActive ? graphData.filter((p) => p.count > parsedMax) : [];
+
+//   const getTimeSafe = () =>
+//     thresholdsActive
+//       ? graphData.filter(
+//         (p) => p.count >= parsedMin && p.count <= parsedMax
+//       )
+//       : [];
+
+//   const getPerSecondAlerts = () =>
+//     thresholdsActive
+//       ? perSecondData.filter((p) => p.avg_count > parsedMax)
+//       : [];
+
+//   const getPerSecondSafe = () =>
+//     thresholdsActive
+//       ? perSecondData.filter(
+//         (p) => p.avg_count >= parsedMin && p.avg_count <= parsedMax
+//       )
+//       : [];
+
+//   const getFrameAlerts = () =>
+//     thresholdsActive ? frameSeries.filter((p) => p.count > parsedMax) : [];
+
+//   const getFrameSafe = () =>
+//     thresholdsActive
+//       ? frameSeries.filter(
+//         (p) => p.count >= parsedMin && p.count <= parsedMax
+//       )
+//       : [];
+
+
+//   // ---------- Month-wise detail helpers (use monthDailyData) ----------
+//   const getMonthAlertDays = () =>
+//     thresholdsActive
+//       ? monthDailyData.filter((d) => d.max_count > parsedMax)
+//       : [];
+
+//   const getMonthSafeDays = () =>
+//     thresholdsActive
+//       ? monthDailyData.filter(
+//         (d) => d.avg_count >= parsedMin && d.avg_count <= parsedMax
+//       )
+//       : [];
+
+//   // ---------- Year-wise detail helpers (use yearMonthlyData) ----------
+//   const getYearAlertMonths = () =>
+//     thresholdsActive
+//       ? yearMonthlyData.filter((m) => m.max_count > parsedMax)
+//       : [];
+
+//   const getYearSafeMonths = () =>
+//     thresholdsActive
+//       ? yearMonthlyData.filter(
+//         (m) => m.avg_count >= parsedMin && m.avg_count <= parsedMax
+//       )
+//       : [];
+
+
+
+
+//   return (
+//     <>
+//       <div style={styles.page}>
+//         <div style={styles.content}>
+//           {/* TOP BAR */}
+//           <div style={styles.topBar}>
+//             <button style={styles.backBtn} onClick={() => navigate(-1)}>
+//               ← Back
+//             </button>
+
+//             <div style={styles.brandBlock}>
+//               <div style={styles.brand}>VigilNet Dashboard</div>
+//               <div style={styles.header}>Historical Crowd Analytics</div>
+//               <div style={styles.subtitle}>
+//                 Upload model outputs as CSV and explore time-based crowd trends
+//                 for research, debugging, and reporting.
+//               </div>
+//             </div>
+//           </div>
+
+//           {/* THEORY CARD */}
+//           <div style={styles.theoryCard}>
+//             <div style={styles.theoryTitle}>Why this dashboard matters</div>
+//             <div style={styles.theoryHeading}>
+//               From raw CSV logs to decisions you can defend
+//             </div>
+//             <p style={styles.theoryText}>
+//               VigilNet’s historical dashboard turns date + timestamp + count
+//               logs into a visual narrative. You can zoom into a single day or
+//               step back to see how whole months behave, spotting spikes, quiet
+//               days, and recurring patterns.
+//             </p>
+//             <ul style={styles.theoryList}>
+//               <li>
+//                 <strong>Day-wise:</strong> inspect how counts evolve within a
+//                 day (timestamp-wise, per-second, per-frame).
+//               </li>
+//               <li>
+//                 <strong>Month-wise:</strong> summarise how each day in a month
+//                 behaves using average, peak, and total crowd counts.
+//               </li>
+//             </ul>
+//           </div>
+
+//           {/* MAIN ROW */}
+//           <div style={styles.mainRow}>
+//             {/* LEFT COLUMN: HISTORY */}
+//             <div style={styles.leftCol}>
+//               <div style={styles.historyCard}>
+//                 <div style={styles.historyTitle}>Upload history</div>
+//                 <div style={styles.historySub}>
+//                   Recent CSV files processed on this dashboard.
+//                 </div>
+
+//                 {history.length === 0 ? (
+//                   <div style={styles.historyEmpty}>
+//                     No files analyzed yet. Upload a CSV to start building your
+//                     history.
+//                   </div>
+//                 ) : (
+//                   <>
+//                     <ul style={styles.historyList}>
+//                       {history.map((item, idx) => (
+//                         <li
+//                           key={idx}
+//                           style={{
+//                             ...styles.historyItem,
+//                             cursor: "pointer",
+//                             backgroundColor:
+//                               selectedHistory === item
+//                                 ? "rgba(15,23,42,0.8)"
+//                                 : "transparent",
+//                           }}
+//                           onClick={() => setSelectedHistory(item)}
+//                         >
+//                           <div style={styles.historyName}>{item.name}</div>
+//                           <div style={styles.historyMeta}>
+//                             {item.points} points · {item.uploadedAt}
+//                           </div>
+//                         </li>
+//                       ))}
+//                     </ul>
+
+//                     {selectedHistory && (
+//                       <div
+//                         style={{
+//                           marginTop: 10,
+//                           paddingTop: 8,
+//                           borderTop: "1px solid rgba(15,23,42,0.9)",
+//                           fontSize: 12,
+//                           color: "#9ca3af",
+//                         }}
+//                       >
+//                         <div>
+//                           Min count:{" "}
+//                           {selectedHistory.minCount?.toFixed
+//                             ? selectedHistory.minCount.toFixed(2)
+//                             : selectedHistory.minCount}
+//                         </div>
+//                         <div>
+//                           Max count:{" "}
+//                           {selectedHistory.maxCount?.toFixed
+//                             ? selectedHistory.maxCount.toFixed(2)
+//                             : selectedHistory.maxCount}
+//                         </div>
+//                         <div>Total points: {selectedHistory.points}</div>
+//                       </div>
+//                     )}
+//                   </>
+//                 )}
+//               </div>
+//             </div>
+
+//             {/* RIGHT COLUMN: UPLOAD + GRAPHS */}
+//             <div style={styles.rightCol}>
+//               {/* CSV Upload + Thresholds + View & Filters */}
+//               <div style={styles.graphBox}>
+//                 <div style={styles.graphTitle}>Upload CSV file</div>
+//                 <div style={styles.graphSubtitle}>
+//                   Expected format:&nbsp;
+//                   <code>date, timestamp_ns, frame_index, count</code>
+//                   <br />
+//                   Or<br />
+//                   <code>date, timestamp_ns, frame_index, count, alert</code>
+//                   <br /><br />
+
+//                   {/* Legend additions */}
+//                   <span style={{ color: "#a855f7", fontWeight: "bold" }}>●</span>
+//                   &nbsp;violet dot = lens_covered_or_extremely_dark
+//                   <br />
+
+//                   <span style={{ color: "#f97316", fontWeight: "bold" }}>●</span>
+//                   &nbsp;orange dot = camera_frozen
+//                 </div>
+
+
+
+
+//                 <input
+//                   type="file"
+//                   accept=".csv"
+//                   onChange={(e) => setCsvFile(e.target.files[0])}
+//                   style={styles.fileInput}
+//                 />
+
+//                 <div style={{ display: "flex", gap: 10, marginTop: 5 }}>
+//                   <button onClick={handleCSVUpload} style={styles.actionBtn}>
+//                     {loading ? "Processing..." : "Upload & Process"}
+//                   </button>
+
+//                   <button onClick={resetView} style={styles.resetBtn}>
+//                     Clear / Refresh
+//                   </button>
+//                 </div>
+
+//                 {csvFile && (
+//                   <div style={styles.selectedFile}>
+//                     Selected file: {csvFile.name}
+//                   </div>
+//                 )}
+
+//                 {/* Threshold controls */}
+//                 <div style={styles.thresholdRow}>
+//                   <span>Thresholds:</span>
+//                   <span>Min (safe start)</span>
+//                   <input
+//                     type="number"
+//                     step="0.01"
+//                     value={minThreshold}
+//                     onChange={(e) => setMinThreshold(e.target.value)}
+//                     style={styles.thresholdInput}
+//                     placeholder="e.g. 100"
+//                   />
+//                   <span>Max (alert)</span>
+//                   <input
+//                     type="number"
+//                     step="0.01"
+//                     value={maxThreshold}
+//                     onChange={(e) => setMaxThreshold(e.target.value)}
+//                     style={styles.thresholdInput}
+//                     placeholder="e.g. 150"
+//                   />
+//                 </div>
+
+//                 {/* View mode toggle */}
+//                 <div style={styles.viewToggleRow}>
+//                   <span>View mode:</span>
+//                   <button
+//                     style={{
+//                       ...styles.viewToggleBtn,
+//                       ...(viewMode === "day" ? styles.viewToggleBtnActive : {}),
+//                     }}
+//                     onClick={() => {
+//                       setViewMode("day");
+//                       applyDateFilter(
+//                         selectedDate,
+//                         rawGraphData,
+//                         rawPerSecondData,
+//                         rawFrameSeries
+//                       );
+//                     }}
+//                   >
+//                     Day-wise
+//                   </button>
+
+//                   <button
+//                     style={{
+//                       ...styles.viewToggleBtn,
+//                       ...(viewMode === "month" ? styles.viewToggleBtnActive : {}),
+//                     }}
+//                     onClick={() => {
+//                       setViewMode("month");
+//                       applyMonthFilter(selectedMonth, rawGraphData);
+//                     }}
+//                   >
+//                     Month-wise
+//                   </button>
+
+//                   <button
+//                     style={{
+//                       ...styles.viewToggleBtn,
+//                       ...(viewMode === "year" ? styles.viewToggleBtnActive : {}),
+//                     }}
+//                     onClick={() => {
+//                       setViewMode("year");
+//                       applyYearFilter(selectedYear, rawGraphData);
+//                     }}
+//                   >
+//                     Year-wise
+//                   </button>
+//                 </div>
+
+
+//                 {/* Day-wise vs Month-wise filters */}
+//                 {viewMode === "day" && availableDates.length > 0 && (
+//                   <div style={styles.thresholdRow}>
+//                     <span>Filter by date:</span>
+//                     <select
+//                       value={selectedDate}
+//                       onChange={(e) => {
+//                         const value = e.target.value;
+//                         setSelectedDate(value);
+//                         applyDateFilter(
+//                           value,
+//                           rawGraphData,
+//                           rawPerSecondData,
+//                           rawFrameSeries
+//                         );
+//                       }}
+//                       style={styles.dateSelect}
+//                     >
+//                       <option value="">All dates</option>
+//                       {availableDates.map((d) => (
+//                         <option key={d} value={d}>
+//                           {d}
+//                         </option>
+//                       ))}
+//                     </select>
+//                     <button
+//                       style={styles.filterBtn}
+//                       onClick={() =>
+//                         applyDateFilter(
+//                           selectedDate,
+//                           rawGraphData,
+//                           rawPerSecondData,
+//                           rawFrameSeries
+//                         )
+//                       }
+//                     >
+//                       FILTER
+//                     </button>
+//                   </div>
+//                 )}
+
+//                 {viewMode === "month" && availableMonths.length > 0 && (
+//                   <div style={styles.thresholdRow}>
+//                     <span>Filter by month:</span>
+//                     <select
+//                       value={selectedMonth}
+//                       onChange={(e) => {
+//                         const value = e.target.value;
+//                         setSelectedMonth(value);
+//                         applyMonthFilter(value, rawGraphData);
+//                       }}
+//                       style={styles.dateSelect}
+//                     >
+//                       <option value="">All months</option>
+//                       {availableMonths.map((m) => (
+//                         <option key={m} value={m}>
+//                           {m}
+//                         </option>
+//                       ))}
+//                     </select>
+//                     <button
+//                       style={styles.filterBtn}
+//                       onClick={() =>
+//                         applyMonthFilter(selectedMonth, rawGraphData)
+//                       }
+//                     >
+//                       FILTER
+//                     </button>
+//                   </div>
+//                 )}
+
+//                 {viewMode === "year" && availableYears.length > 0 && (
+//                   <div style={styles.thresholdRow}>
+//                     <span>Filter by year:</span>
+//                     <select
+//                       value={selectedYear}
+//                       onChange={(e) => {
+//                         const value = e.target.value;
+//                         setSelectedYear(value);
+//                         applyYearFilter(value, rawGraphData);
+//                       }}
+//                       style={styles.dateSelect}
+//                     >
+//                       <option value="">All years</option>
+//                       {availableYears.map((y) => (
+//                         <option key={y} value={y}>
+//                           {y}
+//                         </option>
+//                       ))}
+//                     </select>
+//                     <button
+//                       style={styles.filterBtn}
+//                       onClick={() => applyYearFilter(selectedYear, rawGraphData)}
+//                     >
+//                       FILTER
+//                     </button>
+//                   </div>
+//                 )}
+
+
+//                 {summary && (
+//                   <div style={styles.summaryRow}>
+//                     <span style={styles.summaryChip}>
+//                       Min count: {summary.min_count.toFixed(2)}
+//                     </span>
+//                     <span style={styles.summaryChip}>
+//                       Max count: {summary.max_count.toFixed(2)}
+//                     </span>
+//                     <span style={styles.summaryChip}>
+//                       Mean count: {summary.mean_count.toFixed(2)}
+//                     </span>
+//                     <span style={styles.summaryChip}>
+//                       Points: {summary.num_points}
+//                     </span>
+//                   </div>
+//                 )}
+//               </div>
+
+//               {/* ==== GRAPHS SECTION ==== */}
+
+//               {viewMode === "day" ? (
+//                 <>
+//                   {/* DAY-WISE: GRAPH 1 */}
+//                   <div style={styles.graphBox}>
+//                     <div style={styles.graphTitle}>
+//                       Crowd trends (time-series, per day)
+//                     </div>
+//                     <div style={styles.graphSubtitle}>
+//                       time_sec vs count – green = within safe range, red = above
+//                       alert threshold.
+//                     </div>
+
+//                     <button
+//                       style={styles.detailBtn}
+//                       onClick={() => setShowTimeDetails((prev) => !prev)}
+//                     >
+//                       {showTimeDetails ? "Hide details" : "Show details"}
+//                     </button>
+
+//                     <div style={styles.graphArea}>
+//                       {graphData.length === 0 ? (
+//                         <div style={styles.graphPlaceholder}>
+//                           Upload a CSV file and pick a date to render the
+//                           time–series chart.
+//                         </div>
+//                       ) : (
+//                         <ResponsiveContainer width="100%" height="100%">
+//                           <LineChart data={graphData}>
+//                             <XAxis
+//                               dataKey="timestamp"
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Time (sec)",
+//                                 position: "insideBottom",
+//                                 offset: -4,
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <YAxis
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Count",
+//                                 angle: -90,
+//                                 position: "insideLeft",
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <Tooltip
+//                               contentStyle={{
+//                                 backgroundColor: "#020617",
+//                                 border: "1px solid #1e293b",
+//                                 borderRadius: 8,
+//                                 fontSize: 11,
+//                               }}
+//                               labelStyle={{ color: "#e5e7eb" }}
+//                             />
+//                             {thresholdsActive && (
+//                               <>
+//                                 <ReferenceLine
+//                                   y={parsedMin}
+//                                   stroke={GREEN}
+//                                   strokeDasharray="3 3"
+//                                   label={{
+//                                     value: "Min safe",
+//                                     fill: GREEN,
+//                                     fontSize: 10,
+//                                   }}
+//                                 />
+//                                 <ReferenceLine
+//                                   y={parsedMax}
+//                                   stroke={RED}
+//                                   strokeDasharray="3 3"
+//                                   label={{
+//                                     value: "Max alert",
+//                                     fill: RED,
+//                                     fontSize: 10,
+//                                   }}
+//                                 />
+//                               </>
+//                             )}
+//                             <Line
+//                               type="monotone"
+//                               dataKey="count"
+//                               stroke={BLUE}
+//                               strokeWidth={2}
+//                               dot={(props) => renderColoredDot(props)}
+//                               activeDot={{ r: 5 }}
+//                             />
+//                           </LineChart>
+//                         </ResponsiveContainer>
+//                       )}
+//                     </div>
+
+//                     {showTimeDetails && thresholdsActive && (
+//                       <div style={styles.detailPanel}>
+//                         <div style={styles.detailSectionTitle}>
+//                           Alert points (count &gt; max)
+//                         </div>
+//                         {getTimeAlerts().length === 0 ? (
+//                           <div>No alert points.</div>
+//                         ) : (
+//                           getTimeAlerts().map((p, idx) => (
+//                             <div key={`ta-${idx}`}>
+//                               date = {p.date}, t = {p.timestamp}, count ={" "}
+//                               {p.count.toFixed(3)}
+//                             </div>
+//                           ))
+//                         )}
+//                         <div style={styles.detailSectionTitle}>
+//                           Safe points (between min &amp; max)
+//                         </div>
+//                         {getTimeSafe().length === 0 ? (
+//                           <div>No safe points based on current thresholds.</div>
+//                         ) : (
+//                           getTimeSafe().map((p, idx) => (
+//                             <div key={`ts-${idx}`}>
+//                               date = {p.date}, t = {p.timestamp}, count ={" "}
+//                               {p.count.toFixed(3)}
+//                             </div>
+//                           ))
+//                         )}
+//                       </div>
+//                     )}
+//                   </div>
+
+//                   {/* DAY-WISE: GRAPH 2 */}
+//                   <div style={styles.graphBox}>
+//                     <div style={styles.graphTitle}>
+//                       Per-second average crowd level (selected day)
+//                     </div>
+//                     <div style={styles.graphSubtitle}>
+//                       Bars show average count per whole second – green safe, red
+//                       alert.
+//                     </div>
+
+//                     <button
+//                       style={styles.detailBtn}
+//                       onClick={() =>
+//                         setShowPerSecondDetails((prev) => !prev)
+//                       }
+//                     >
+//                       {showPerSecondDetails ? "Hide details" : "Show details"}
+//                     </button>
+
+//                     <div style={styles.graphArea}>
+//                       {perSecondData.length === 0 ? (
+//                         <div style={styles.graphPlaceholder}>
+//                           Upload a CSV and select a date to see per-second
+//                           averages.
+//                         </div>
+//                       ) : (
+//                         <ResponsiveContainer width="100%" height="100%">
+//                           <BarChart data={perSecondData}>
+//                             <CartesianGrid strokeDasharray="3 3" />
+//                             <XAxis
+//                               dataKey="second"
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Second",
+//                                 position: "insideBottom",
+//                                 offset: -4,
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <YAxis
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Avg Count",
+//                                 angle: -90,
+//                                 position: "insideLeft",
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <Tooltip
+//                               contentStyle={{
+//                                 backgroundColor: "#020617",
+//                                 border: "1px solid #1e293b",
+//                                 borderRadius: 8,
+//                                 fontSize: 11,
+//                               }}
+//                               labelStyle={{ color: "#e5e7eb" }}
+//                             />
+//                             <Legend />
+//                             <Bar dataKey="avg_count" name="Avg count">
+//                               {perSecondData.map((entry, index) => {
+//                                 const v = entry.avg_count;
+//                                 let fillColor = "#60a5fa";
+//                                 if (thresholdsActive) {
+//                                   if (v > parsedMax) fillColor = RED;
+//                                   else if (
+//                                     v >= parsedMin &&
+//                                     v <= parsedMax
+//                                   )
+//                                     fillColor = GREEN;
+//                                   else fillColor = AMBER;
+//                                 }
+//                                 return (
+//                                   <Cell
+//                                     key={`cell-${index}`}
+//                                     fill={fillColor}
+//                                   />
+//                                 );
+//                               })}
+//                             </Bar>
+//                             {thresholdsActive && (
+//                               <>
+//                                 <ReferenceLine
+//                                   y={parsedMin}
+//                                   stroke={GREEN}
+//                                   strokeDasharray="3 3"
+//                                 />
+//                                 <ReferenceLine
+//                                   y={parsedMax}
+//                                   stroke={RED}
+//                                   strokeDasharray="3 3"
+//                                 />
+//                               </>
+//                             )}
+//                           </BarChart>
+//                         </ResponsiveContainer>
+//                       )}
+//                     </div>
+
+//                     {showPerSecondDetails && thresholdsActive && (
+//                       <div style={styles.detailPanel}>
+//                         <div style={styles.detailSectionTitle}>
+//                           Alert seconds (avg &gt; max)
+//                         </div>
+//                         {getPerSecondAlerts().length === 0 ? (
+//                           <div>No alert seconds.</div>
+//                         ) : (
+//                           getPerSecondAlerts().map((p, idx) => (
+//                             <div key={`pa-${idx}`}>
+//                               date = {p.date}, second = {p.second}, avg ={" "}
+//                               {p.avg_count.toFixed(3)}
+//                             </div>
+//                           ))
+//                         )}
+//                         <div style={styles.detailSectionTitle}>
+//                           Safe seconds (between min &amp; max)
+//                         </div>
+//                         {getPerSecondSafe().length === 0 ? (
+//                           <div>
+//                             No safe seconds for current thresholds.
+//                           </div>
+//                         ) : (
+//                           getPerSecondSafe().map((p, idx) => (
+//                             <div key={`ps-${idx}`}>
+//                               date = {p.date}, second = {p.second}, avg ={" "}
+//                               {p.avg_count.toFixed(3)}
+//                             </div>
+//                           ))
+//                         )}
+//                       </div>
+//                     )}
+//                   </div>
+
+//                   {/* DAY-WISE: GRAPH 3 */}
+//                   <div style={styles.graphBox}>
+//                     <div style={styles.graphTitle}>
+//                       Frame index vs crowd count (selected day)
+//                     </div>
+//                     <div style={styles.graphSubtitle}>
+//                       Helps you inspect how the model behaves frame by frame for
+//                       the chosen day.
+//                     </div>
+
+//                     <button
+//                       style={styles.detailBtn}
+//                       onClick={() => setShowFrameDetails((prev) => !prev)}
+//                     >
+//                       {showFrameDetails ? "Hide details" : "Show details"}
+//                     </button>
+
+//                     <div style={styles.graphArea}>
+//                       {frameSeries.length === 0 ? (
+//                         <div style={styles.graphPlaceholder}>
+//                           Upload a CSV and select a date to see frame-based
+//                           trend.
+//                         </div>
+//                       ) : (
+//                         <ResponsiveContainer width="100%" height="100%">
+//                           <LineChart data={frameSeries}>
+//                             <XAxis
+//                               dataKey="frame_index"
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Frame index",
+//                                 position: "insideBottom",
+//                                 offset: -4,
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <YAxis
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Count",
+//                                 angle: -90,
+//                                 position: "insideLeft",
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <Tooltip
+//                               contentStyle={{
+//                                 backgroundColor: "#020617",
+//                                 border: "1px solid #1e293b",
+//                                 borderRadius: 8,
+//                                 fontSize: 11,
+//                               }}
+//                               labelStyle={{ color: "#e5e7eb" }}
+//                             />
+//                             {thresholdsActive && (
+//                               <>
+//                                 <ReferenceLine
+//                                   y={parsedMin}
+//                                   stroke={GREEN}
+//                                   strokeDasharray="3 3"
+//                                 />
+//                                 <ReferenceLine
+//                                   y={parsedMax}
+//                                   stroke={RED}
+//                                   strokeDasharray="3 3"
+//                                 />
+//                               </>
+//                             )}
+//                             <Line
+//                               type="monotone"
+//                               dataKey="count"
+//                               stroke={CYAN}
+//                               strokeWidth={2}
+//                               dot={(props) => renderColoredDot(props)}
+//                               activeDot={{ r: 5 }}
+//                             />
+//                           </LineChart>
+//                         </ResponsiveContainer>
+//                       )}
+//                     </div>
+
+//                     {showFrameDetails && thresholdsActive && (
+//                       <div style={styles.detailPanel}>
+//                         <div style={styles.detailSectionTitle}>
+//                           Alert frames (count &gt; max)
+//                         </div>
+//                         {getFrameAlerts().length === 0 ? (
+//                           <div>No alert frames.</div>
+//                         ) : (
+//                           getFrameAlerts().map((p, idx) => (
+//                             <div key={`fa-${idx}`}>
+//                               date = {p.date}, frame = {p.frame_index}, count ={" "}
+//                               {p.count.toFixed(3)}
+//                             </div>
+//                           ))
+//                         )}
+//                         <div style={styles.detailSectionTitle}>
+//                           Safe frames (between min &amp; max)
+//                         </div>
+//                         {getFrameSafe().length === 0 ? (
+//                           <div>No safe frames for current thresholds.</div>
+//                         ) : (
+//                           getFrameSafe().map((p, idx) => (
+//                             <div key={`fs-${idx}`}>
+//                               date = {p.date}, frame = {p.frame_index}, count ={" "}
+//                               {p.count.toFixed(3)}
+//                             </div>
+//                           ))
+//                         )}
+//                       </div>
+//                     )}
+//                   </div>
+//                 </>
+//               ) : viewMode === "month" ? (
+//                 <>
+//                   {/* MONTH-WISE: GRAPH 1 - Day vs avg count */}
+//                   {/* MONTH-WISE: GRAPH 1 - Day vs avg_count */}
+//                   <div style={styles.graphBox}>
+//                     <div style={styles.graphTitle}>
+//                       Month overview: average crowd per day
+//                     </div>
+//                     <div style={styles.graphSubtitle}>
+//                       Each point = one day. Useful for spotting consistently
+//                       busy or calm days in the selected month.
+//                     </div>
+
+//                     {/* NEW: details toggle button */}
+//                     <button
+//                       style={styles.detailBtn}
+//                       onClick={() => setShowMonthDetails((prev) => !prev)}
+//                     >
+//                       {showMonthDetails ? "Hide details" : "Show details"}
+//                     </button>
+
+//                     <div style={styles.graphArea}>
+//                       {monthDailyData.length === 0 ? (
+//                         <div style={styles.graphPlaceholder}>
+//                           Upload a CSV and pick a month to see day-wise
+//                           averages.
+//                         </div>
+//                       ) : (
+//                         <ResponsiveContainer width="100%" height="100%">
+//                           <LineChart data={monthDailyData}>
+//                             <XAxis
+//                               dataKey="day"
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Day of month",
+//                                 position: "insideBottom",
+//                                 offset: -4,
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <YAxis
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Average count",
+//                                 angle: -90,
+//                                 position: "insideLeft",
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <Tooltip
+//                               contentStyle={{
+//                                 backgroundColor: "#020617",
+//                                 border: "1px solid #1e293b",
+//                                 borderRadius: 8,
+//                                 fontSize: 11,
+//                               }}
+//                               labelStyle={{ color: "#e5e7eb" }}
+//                             />
+//                             <Line
+//                               type="monotone"
+//                               dataKey="avg_count"
+//                               stroke={BLUE}
+//                               strokeWidth={2}
+//                               dot={{ r: 3 }}
+//                               activeDot={{ r: 4 }}
+//                             />
+//                           </LineChart>
+//                         </ResponsiveContainer>
+//                       )}
+//                     </div>
+
+//                     {/* NEW: month details panel */}
+//                     {showMonthDetails && thresholdsActive && (
+//                       <div style={styles.detailPanel}>
+//                         <div style={styles.detailSectionTitle}>
+//                           Alert days (max &gt; max threshold)
+//                         </div>
+//                         {getMonthAlertDays().length === 0 ? (
+//                           <div>No alert days.</div>
+//                         ) : (
+//                           getMonthAlertDays().map((d, idx) => (
+//                             <div key={`md-alert-${idx}`}>
+//                               day = {d.day}, avg = {d.avg_count.toFixed(2)}, max ={" "}
+//                               {d.max_count.toFixed(2)}, total = {d.total_count.toFixed(2)}
+//                             </div>
+//                           ))
+//                         )}
+
+//                         <div style={styles.detailSectionTitle}>
+//                           Safe days (avg between min &amp; max)
+//                         </div>
+//                         {getMonthSafeDays().length === 0 ? (
+//                           <div>No safe days for current thresholds.</div>
+//                         ) : (
+//                           getMonthSafeDays().map((d, idx) => (
+//                             <div key={`md-safe-${idx}`}>
+//                               day = {d.day}, avg = {d.avg_count.toFixed(2)}, max ={" "}
+//                               {d.max_count.toFixed(2)}, total = {d.total_count.toFixed(2)}
+//                             </div>
+//                           ))
+//                         )}
+//                       </div>
+//                     )}
+//                   </div>
+
+
+//                   {/* MONTH-WISE: GRAPH 2 - Day vs max count */}
+//                   <div style={styles.graphBox}>
+//                     <div style={styles.graphTitle}>
+//                       Month overview: peak crowd per day
+//                     </div>
+//                     <div style={styles.graphSubtitle}>
+//                       Shows the highest count observed on each day of the
+//                       selected month.
+//                     </div>
+
+//                     {/* NEW: details toggle */}
+//                     <button
+//                       style={styles.detailBtn}
+//                       onClick={() => setShowMonthDetails2((prev) => !prev)}
+//                     >
+//                       {showMonthDetails2 ? "Hide details" : "Show details"}
+//                     </button>
+
+//                     <div style={styles.graphArea}>
+//                       {monthDailyData.length === 0 ? (
+//                         <div style={styles.graphPlaceholder}>
+//                           Upload a CSV and pick a month to see max counts per
+//                           day.
+//                         </div>
+//                       ) : (
+//                         <ResponsiveContainer width="100%" height="100%">
+//                           <BarChart data={monthDailyData}>
+//                             <CartesianGrid strokeDasharray="3 3" />
+//                             <XAxis
+//                               dataKey="day"
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Day of month",
+//                                 position: "insideBottom",
+//                                 offset: -4,
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <YAxis
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Max count",
+//                                 angle: -90,
+//                                 position: "insideLeft",
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <Tooltip
+//                               contentStyle={{
+//                                 backgroundColor: "#020617",
+//                                 border: "1px solid #1e293b",
+//                                 borderRadius: 8,
+//                                 fontSize: 11,
+//                               }}
+//                               labelStyle={{ color: "#e5e7eb" }}
+//                             />
+//                             <Legend />
+//                             <Bar dataKey="max_count" name="Max count">
+//                               {monthDailyData.map((entry, index) => {
+//                                 const v = entry.max_count;
+//                                 let fillColor = "#60a5fa";
+//                                 if (thresholdsActive) {
+//                                   if (v > parsedMax) fillColor = RED;
+//                                   else if (
+//                                     v >= parsedMin &&
+//                                     v <= parsedMax
+//                                   )
+//                                     fillColor = GREEN;
+//                                   else fillColor = AMBER;
+//                                 }
+//                                 return (
+//                                   <Cell
+//                                     key={`mmax-${index}`}
+//                                     fill={fillColor}
+//                                   />
+//                                 );
+//                               })}
+//                             </Bar>
+//                           </BarChart>
+//                         </ResponsiveContainer>
+//                       )}
+//                     </div>
+//                     {/* NEW: details panel */}
+//                     {showMonthDetails2 && thresholdsActive && (
+//                       <div style={styles.detailPanel}>
+//                         <div style={styles.detailSectionTitle}>
+//                           Alert days (max &gt; max threshold)
+//                         </div>
+//                         {getMonthAlertDays().length === 0 ? (
+//                           <div>No alert days.</div>
+//                         ) : (
+//                           getMonthAlertDays().map((d, idx) => (
+//                             <div key={`md2-alert-${idx}`}>
+//                               day = {d.day}, max = {d.max_count.toFixed(2)}, avg ={" "}
+//                               {d.avg_count.toFixed(2)}, total ={" "}
+//                               {d.total_count.toFixed(2)}
+//                             </div>
+//                           ))
+//                         )}
+
+//                         <div style={styles.detailSectionTitle}>
+//                           Safe days (avg between min &amp; max)
+//                         </div>
+//                         {getMonthSafeDays().length === 0 ? (
+//                           <div>No safe days for current thresholds.</div>
+//                         ) : (
+//                           getMonthSafeDays().map((d, idx) => (
+//                             <div key={`md2-safe-${idx}`}>
+//                               day = {d.day}, max = {d.max_count.toFixed(2)}, avg ={" "}
+//                               {d.avg_count.toFixed(2)}, total ={" "}
+//                               {d.total_count.toFixed(2)}
+//                             </div>
+//                           ))
+//                         )}
+//                       </div>
+//                     )}
+//                   </div>
+
+//                   {/* MONTH-WISE: GRAPH 3 - Day vs total count */}
+//                   <div style={styles.graphBox}>
+//                     <div style={styles.graphTitle}>
+//                       Month overview: total crowd signal per day
+//                     </div>
+//                     <div style={styles.graphSubtitle}>
+//                       Sum of all counts for each day – useful for load planning
+//                       and total crowd exposure.
+//                     </div>
+
+//                     {/* NEW: details toggle */}
+//                     <button
+//                       style={styles.detailBtn}
+//                       onClick={() => setShowMonthDetails3((prev) => !prev)}
+//                     >
+//                       {showMonthDetails3 ? "Hide details" : "Show details"}
+//                     </button>
+
+//                     <div style={styles.graphArea}>
+//                       {monthDailyData.length === 0 ? (
+//                         <div style={styles.graphPlaceholder}>
+//                           Upload a CSV and pick a month to see total signals per
+//                           day.
+//                         </div>
+//                       ) : (
+//                         <ResponsiveContainer width="100%" height="100%">
+//                           <LineChart data={monthDailyData}>
+//                             <XAxis
+//                               dataKey="day"
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Day of month",
+//                                 position: "insideBottom",
+//                                 offset: -4,
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <YAxis
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Total count (sum)",
+//                                 angle: -90,
+//                                 position: "insideLeft",
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <Tooltip
+//                               contentStyle={{
+//                                 backgroundColor: "#020617",
+//                                 border: "1px solid #1e293b",
+//                                 borderRadius: 8,
+//                                 fontSize: 11,
+//                               }}
+//                               labelStyle={{ color: "#e5e7eb" }}
+//                             />
+//                             <Line
+//                               type="monotone"
+//                               dataKey="total_count"
+//                               stroke={CYAN}
+//                               strokeWidth={2}
+//                               dot={{ r: 3 }}
+//                               activeDot={{ r: 4 }}
+//                             />
+//                           </LineChart>
+//                         </ResponsiveContainer>
+//                       )}
+//                     </div>
+
+//                     {/* NEW: details panel */}
+//                     {showMonthDetails3 && thresholdsActive && (
+//                       <div style={styles.detailPanel}>
+//                         <div style={styles.detailSectionTitle}>
+//                           Alert days (max &gt; max threshold)
+//                         </div>
+//                         {getMonthAlertDays().length === 0 ? (
+//                           <div>No alert days.</div>
+//                         ) : (
+//                           getMonthAlertDays().map((d, idx) => (
+//                             <div key={`md3-alert-${idx}`}>
+//                               day = {d.day}, total = {d.total_count.toFixed(2)}, max ={" "}
+//                               {d.max_count.toFixed(2)}, avg = {d.avg_count.toFixed(2)}
+//                             </div>
+//                           ))
+//                         )}
+
+//                         <div style={styles.detailSectionTitle}>
+//                           Safe days (avg between min &amp; max)
+//                         </div>
+//                         {getMonthSafeDays().length === 0 ? (
+//                           <div>No safe days for current thresholds.</div>
+//                         ) : (
+//                           getMonthSafeDays().map((d, idx) => (
+//                             <div key={`md3-safe-${idx}`}>
+//                               day = {d.day}, total = {d.total_count.toFixed(2)}, max ={" "}
+//                               {d.max_count.toFixed(2)}, avg = {d.avg_count.toFixed(2)}
+//                             </div>
+//                           ))
+//                         )}
+//                       </div>
+//                     )}
+//                   </div>
+//                 </>
+//               ) : (
+//                 <>
+//                   {/* YEAR-WISE: GRAPH 1 - Month vs avg_count */}
+//                   <div style={styles.graphBox}>
+//                     <div style={styles.graphTitle}>
+//                       Year overview: average crowd per month
+//                     </div>
+//                     <div style={styles.graphSubtitle}>
+//                       Each point = one month. Helps you compare how busy months are within the selected year.
+//                     </div>
+
+//                     {/* NEW: details toggle button */}
+//                     <button
+//                       style={styles.detailBtn}
+//                       onClick={() => setShowYearDetails((prev) => !prev)}
+//                     >
+//                       {showYearDetails ? "Hide details" : "Show details"}
+//                     </button>
+
+//                     <div style={styles.graphArea}>
+//                       {yearMonthlyData.length === 0 ? (
+//                         <div style={styles.graphPlaceholder}>
+//                           Upload a CSV and pick a year to see month-wise averages.
+//                         </div>
+//                       ) : (
+//                         <ResponsiveContainer width="100%" height="100%">
+//                           <LineChart data={yearMonthlyData}>
+//                             <XAxis
+//                               dataKey="month"
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Month (1–12)",
+//                                 position: "insideBottom",
+//                                 offset: -4,
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <YAxis
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Average count",
+//                                 angle: -90,
+//                                 position: "insideLeft",
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <Tooltip
+//                               contentStyle={{
+//                                 backgroundColor: "#020617",
+//                                 border: "1px solid #1e293b",
+//                                 borderRadius: 8,
+//                                 fontSize: 11,
+//                               }}
+//                               labelStyle={{ color: "#e5e7eb" }}
+//                             />
+//                             <Line
+//                               type="monotone"
+//                               dataKey="avg_count"
+//                               stroke={BLUE}
+//                               strokeWidth={2}
+//                               dot={{ r: 3 }}
+//                               activeDot={{ r: 4 }}
+//                             />
+//                           </LineChart>
+//                         </ResponsiveContainer>
+//                       )}
+//                     </div>
+
+//                     {/* NEW: year details panel */}
+//                     {showYearDetails && thresholdsActive && (
+//                       <div style={styles.detailPanel}>
+//                         <div style={styles.detailSectionTitle}>
+//                           Alert months (max &gt; max threshold)
+//                         </div>
+//                         {getYearAlertMonths().length === 0 ? (
+//                           <div>No alert months.</div>
+//                         ) : (
+//                           getYearAlertMonths().map((m, idx) => (
+//                             <div key={`ym-alert-${idx}`}>
+//                               month = {m.monthLabel}, avg = {m.avg_count.toFixed(2)}, max ={" "}
+//                               {m.max_count.toFixed(2)}, total = {m.total_count.toFixed(2)}
+//                             </div>
+//                           ))
+//                         )}
+
+//                         <div style={styles.detailSectionTitle}>
+//                           Safe months (avg between min &amp; max)
+//                         </div>
+//                         {getYearSafeMonths().length === 0 ? (
+//                           <div>No safe months for current thresholds.</div>
+//                         ) : (
+//                           getYearSafeMonths().map((m, idx) => (
+//                             <div key={`ym-safe-${idx}`}>
+//                               month = {m.monthLabel}, avg = {m.avg_count.toFixed(2)}, max ={" "}
+//                               {m.max_count.toFixed(2)}, total = {m.total_count.toFixed(2)}
+//                             </div>
+//                           ))
+//                         )}
+//                       </div>
+//                     )}
+//                   </div>
+
+
+//                   {/* YEAR-WISE: GRAPH 2 - Month vs max_count */}
+//                   <div style={styles.graphBox}>
+//                     <div style={styles.graphTitle}>
+//                       Year overview: peak crowd per month
+//                     </div>
+//                     <div style={styles.graphSubtitle}>
+//                       Shows the highest count observed in each month of the selected year.
+//                     </div>
+
+//                     {/* NEW: details toggle */}
+//                     <button
+//                       style={styles.detailBtn}
+//                       onClick={() => setShowYearDetails2((prev) => !prev)}
+//                     >
+//                       {showYearDetails2 ? "Hide details" : "Show details"}
+//                     </button>
+
+//                     <div style={styles.graphArea}>
+//                       {yearMonthlyData.length === 0 ? (
+//                         <div style={styles.graphPlaceholder}>
+//                           Upload a CSV and pick a year to see monthly max crowd.
+//                         </div>
+//                       ) : (
+//                         <ResponsiveContainer width="100%" height="100%">
+//                           <BarChart data={yearMonthlyData}>
+//                             <CartesianGrid strokeDasharray="3 3" />
+//                             <XAxis
+//                               dataKey="month"
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Month (1–12)",
+//                                 position: "insideBottom",
+//                                 offset: -4,
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <YAxis
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Max count",
+//                                 angle: -90,
+//                                 position: "insideLeft",
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <Tooltip
+//                               contentStyle={{
+//                                 backgroundColor: "#020617",
+//                                 border: "1px solid #1e293b",
+//                                 borderRadius: 8,
+//                                 fontSize: 11,
+//                               }}
+//                               labelStyle={{ color: "#e5e7eb" }}
+//                             />
+//                             <Legend />
+//                             <Bar dataKey="max_count" name="Max count">
+//                               {yearMonthlyData.map((entry, index) => {
+//                                 const v = entry.max_count;
+//                                 let fillColor = "#60a5fa";
+//                                 if (thresholdsActive) {
+//                                   if (v > parsedMax) fillColor = RED;
+//                                   else if (v >= parsedMin && v <= parsedMax)
+//                                     fillColor = GREEN;
+//                                   else fillColor = AMBER;
+//                                 }
+//                                 return <Cell key={`ymax-${index}`} fill={fillColor} />;
+//                               })}
+//                             </Bar>
+//                           </BarChart>
+//                         </ResponsiveContainer>
+//                       )}
+//                     </div>
+//                     {/* NEW: details panel */}
+//                     {showYearDetails2 && thresholdsActive && (
+//                       <div style={styles.detailPanel}>
+//                         <div style={styles.detailSectionTitle}>
+//                           Alert months (max &gt; max threshold)
+//                         </div>
+//                         {getYearAlertMonths().length === 0 ? (
+//                           <div>No alert months.</div>
+//                         ) : (
+//                           getYearAlertMonths().map((m, idx) => (
+//                             <div key={`ym2-alert-${idx}`}>
+//                               month = {m.monthLabel}, max = {m.max_count.toFixed(2)}, avg ={" "}
+//                               {m.avg_count.toFixed(2)}, total ={" "}
+//                               {m.total_count.toFixed(2)}
+//                             </div>
+//                           ))
+//                         )}
+
+//                         <div style={styles.detailSectionTitle}>
+//                           Safe months (avg between min &amp; max)
+//                         </div>
+//                         {getYearSafeMonths().length === 0 ? (
+//                           <div>No safe months for current thresholds.</div>
+//                         ) : (
+//                           getYearSafeMonths().map((m, idx) => (
+//                             <div key={`ym2-safe-${idx}`}>
+//                               month = {m.monthLabel}, max = {m.max_count.toFixed(2)}, avg ={" "}
+//                               {m.avg_count.toFixed(2)}, total ={" "}
+//                               {m.total_count.toFixed(2)}
+//                             </div>
+//                           ))
+//                         )}
+//                       </div>
+//                     )}
+//                   </div>
+
+//                   {/* YEAR-WISE: GRAPH 3 - Month vs total_count */}
+//                   <div style={styles.graphBox}>
+//                     <div style={styles.graphTitle}>
+//                       Year overview: total crowd signal per month
+//                     </div>
+//                     <div style={styles.graphSubtitle}>
+//                       Sum of all counts for each month – useful for annual planning and capacity checks.
+//                     </div>
+
+//                     {/* NEW: details toggle */}
+//                     <button
+//                       style={styles.detailBtn}
+//                       onClick={() => setShowYearDetails3((prev) => !prev)}
+//                     >
+//                       {showYearDetails3 ? "Hide details" : "Show details"}
+//                     </button>
+
+//                     <div style={styles.graphArea}>
+//                       {yearMonthlyData.length === 0 ? (
+//                         <div style={styles.graphPlaceholder}>
+//                           Upload a CSV and pick a year to see total signal per month.
+//                         </div>
+//                       ) : (
+//                         <ResponsiveContainer width="100%" height="100%">
+//                           <LineChart data={yearMonthlyData}>
+//                             <XAxis
+//                               dataKey="month"
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Month (1–12)",
+//                                 position: "insideBottom",
+//                                 offset: -4,
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <YAxis
+//                               tick={{ fill: "#93c5fd", fontSize: 11 }}
+//                               label={{
+//                                 value: "Total count (sum)",
+//                                 angle: -90,
+//                                 position: "insideLeft",
+//                                 fill: "#6b7280",
+//                                 fontSize: 11,
+//                               }}
+//                             />
+//                             <Tooltip
+//                               contentStyle={{
+//                                 backgroundColor: "#020617",
+//                                 border: "1px solid #1e293b",
+//                                 borderRadius: 8,
+//                                 fontSize: 11,
+//                               }}
+//                               labelStyle={{ color: "#e5e7eb" }}
+//                             />
+//                             <Line
+//                               type="monotone"
+//                               dataKey="total_count"
+//                               stroke={CYAN}
+//                               strokeWidth={2}
+//                               dot={{ r: 3 }}
+//                               activeDot={{ r: 4 }}
+//                             />
+//                           </LineChart>
+//                         </ResponsiveContainer>
+//                       )}
+//                     </div>
+//                     {/* NEW: details panel */}
+//                     {showYearDetails3 && thresholdsActive && (
+//                       <div style={styles.detailPanel}>
+//                         <div style={styles.detailSectionTitle}>
+//                           Alert months (max &gt; max threshold)
+//                         </div>
+//                         {getYearAlertMonths().length === 0 ? (
+//                           <div>No alert months.</div>
+//                         ) : (
+//                           getYearAlertMonths().map((m, idx) => (
+//                             <div key={`ym3-alert-${idx}`}>
+//                               month = {m.monthLabel}, total ={" "}
+//                               {m.total_count.toFixed(2)}, max ={" "}
+//                               {m.max_count.toFixed(2)}, avg ={" "}
+//                               {m.avg_count.toFixed(2)}
+//                             </div>
+//                           ))
+//                         )}
+
+//                         <div style={styles.detailSectionTitle}>
+//                           Safe months (avg between min &amp; max)
+//                         </div>
+//                         {getYearSafeMonths().length === 0 ? (
+//                           <div>No safe months for current thresholds.</div>
+//                         ) : (
+//                           getYearSafeMonths().map((m, idx) => (
+//                             <div key={`ym3-safe-${idx}`}>
+//                               month = {m.monthLabel}, total ={" "}
+//                               {m.total_count.toFixed(2)}, max ={" "}
+//                               {m.max_count.toFixed(2)}, avg ={" "}
+//                               {m.avg_count.toFixed(2)}
+//                             </div>
+//                           ))
+//                         )}
+//                       </div>
+//                     )}
+//                   </div>
+//                 </>
+//               )}
+//             </div>
+//           </div>
+//         </div>
+//       </div >
+//     </>
+//   );
+// }
+
+// export default Dashboard;
+
+
+
+// analytics.py code prateek
+# import os
+# import time
+# import threading
+# import csv
+# from datetime import datetime
+# from io import StringIO
+# import tempfile
+
+# import cv2
+# import numpy as np
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+# from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Query
+# from fastapi.middleware.cors import CORSMiddleware
+# from starlette.responses import JSONResponse
+
+# # ---------------- SETTINGS ----------------
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# MODEL_PATH = os.path.join(BASE_DIR, "crowd_counting.pth")
+
+# USE_GPU = True
+# USE_FP16_IF_CUDA = True
+# FRAME_RESIZE = (512, 384)           # (width, height) - FIXED order
+# SKIP_FRAMES = 10
+# SMOOTH_WINDOW = 3
+# FLUSH_INTERVAL = 2.0
+# PRINT_EVERY = 50
+# UPSAMPLE_DMAP = False
+# SCALE_BY_AREA = True
+# # ------------------------------------------
+
+# device = torch.device("cuda" if (USE_GPU and torch.cuda.is_available()) else "cpu")
+# print("Device:", device)
+
+# # ---------- Camera hinderance helpers (EXACT COPY) ----------
+# _hinder_counters = {
+#     "frozen": 0,
+#     "covered": 0,
+# }
+# FROZEN_DIFF_THRESH = 2.0
+# FROZEN_FRAMES_THRESH = 5
+# COVERED_MEAN_THRESH = 15
+# COVERED_FRAMES_THRESH = 3
+# LOW_CONTRAST_STD_THRESH = 10.0
+# LOW_CONTRAST_FRAMES_THRESH = 5
+# DARK_PCT_THRESH = 0.50
+
+# _prev_gray_for_hinder = None
+
+# def check_camera_hinder(frame_bgr):  # EXACT COPY FROM WORKING VERSION
+#     """
+#     Inspect frame and update internal counters. Returns (is_hindered: bool, reason: str).
+#     """
+#     global _prev_gray_for_hinder, _hinder_counters
+
+#     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+#     mean = float(gray.mean())
+#     std = float(gray.std())
+
+#     diff_mean = None
+#     if _prev_gray_for_hinder is None:
+#         diff_mean = 255.0
+#     else:
+#         diff = cv2.absdiff(gray, _prev_gray_for_hinder)
+#         diff_mean = float(diff.mean())
+
+#     edges = cv2.Canny(gray, 50, 150)
+
+#     if diff_mean < FROZEN_DIFF_THRESH:
+#         _hinder_counters["frozen"] += 1
+#     else:
+#         _hinder_counters["frozen"] = 0
+
+#     if mean < COVERED_MEAN_THRESH and std < LOW_CONTRAST_STD_THRESH:
+#         _hinder_counters["covered"] += 1
+#     else:
+#         _hinder_counters["covered"] = 0
+
+#     reason = ""
+#     if _hinder_counters["frozen"] >= FROZEN_FRAMES_THRESH:
+#         reason = "camera_frozen"
+#     elif _hinder_counters["covered"] >= COVERED_FRAMES_THRESH:
+#         reason = "lens_covered_or_extremely_dark"
+
+#     _prev_gray_for_hinder = gray.copy()
+#     return (bool(reason), reason)
+
+# def enhance_frame(frame_bgr, gamma=1.6, use_clahe=True, clahe_clip=2.0, clahe_tile=(8,8), denoise=False):
+#     img = frame_bgr.copy()
+#     if gamma != 1.0:
+#         invGamma = 1.0 / gamma
+#         table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(256)]).astype("uint8")
+#         img = cv2.LUT(img, table)
+
+#     if use_clahe:
+#         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+#         h, s, v = cv2.split(hsv)
+#         clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=clahe_tile)
+#         v_clahe = clahe.apply(v)
+#         hsv_clahe = cv2.merge((h, s, v_clahe))
+#         img = cv2.cvtColor(hsv_clahe, cv2.COLOR_HSV2BGR)
+
+#     if denoise:
+#         img = cv2.fastNlMeansDenoisingColored(img, None, 10, 10, 7, 21)
+
+#     img = np.clip(img, 0, 255).astype(np.uint8)
+#     return img
+
+# # ---------- MCNN model (EXACT SAME) ----------
+# class MC_CNN(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#         self.column1 = nn.Sequential(
+#             nn.Conv2d(3, 8, 9, padding='same'),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(8, 16, 7, padding='same'),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(16, 32, 7, padding='same'),
+#             nn.ReLU(),
+#             nn.Conv2d(32, 16, 7, padding='same'),
+#             nn.ReLU(),
+#             nn.Conv2d(16, 8, 7, padding='same'),
+#             nn.ReLU(),
+#         )
+#         self.column2 = nn.Sequential(
+#             nn.Conv2d(3, 10, 7, padding='same'),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(10, 20, 5, padding='same'),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(20, 40, 5, padding='same'),
+#             nn.ReLU(),
+#             nn.Conv2d(40, 20, 5, padding='same'),
+#             nn.ReLU(),
+#             nn.Conv2d(20, 10, 5, padding='same'),
+#             nn.ReLU(),
+#         )
+#         self.column3 = nn.Sequential(
+#             nn.Conv2d(3, 12, 5, padding='same'),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(12, 24, 3, padding='same'),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(24, 48, 3, padding='same'),
+#             nn.ReLU(),
+#             nn.Conv2d(48, 24, 3, padding='same'),
+#             nn.ReLU(),
+#             nn.Conv2d(24, 12, 3, padding='same'),
+#             nn.ReLU(),
+#         )
+#         self.fusion_layer = nn.Sequential(
+#             nn.Conv2d(30, 1, 1, padding=0),
+#         )
+
+#     def forward(self, img_tensor):
+#         x1 = self.column1(img_tensor)
+#         x2 = self.column2(img_tensor)
+#         x3 = self.column3(img_tensor)
+#         x = torch.cat((x1, x2, x3), 1)
+#         x = self.fusion_layer(x)
+#         return x
+
+# def load_model(path, device):
+#     m = MC_CNN().to(device).eval()
+#     ckpt = torch.load(path, map_location=device)
+#     if isinstance(ckpt, dict) and 'state_dict' in ckpt:
+#         state = ckpt['state_dict']
+#     elif isinstance(ckpt, dict):
+#         state = ckpt
+#     elif isinstance(ckpt, nn.Module):
+#         ckpt.to(device).eval()
+#         return ckpt
+#     else:
+#         raise RuntimeError("Unsupported checkpoint format")
+    
+#     new_state = {}
+#     for k, v in state.items():
+#         nk = k[len('module.'):] if k.startswith('module.') else k
+#         new_state[nk] = v
+    
+#     missing, unexpected = m.load_state_dict(new_state, strict=False)
+#     if missing or unexpected:
+#         print("load_state_dict warnings:")
+#         if missing: print(" missing:", missing[:6], "...")
+#         if unexpected: print(" unexpected:", list(unexpected)[:6], "...")
+#     return m
+
+# model = load_model(MODEL_PATH, device)
+# if device.type == 'cuda' and USE_FP16_IF_CUDA:
+#     model.half()
+
+# # FIXED: Exact copy of working frame_to_tensor
+# def frame_to_tensor(frame_bgr):
+#     if FRAME_RESIZE is not None:
+#         frame_bgr = cv2.resize(frame_bgr, FRAME_RESIZE, interpolation=cv2.INTER_AREA)
+#     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+#     arr = np.asarray(rgb, dtype=np.float32) / 255.0
+#     arr = np.transpose(arr, (2,0,1))
+#     tensor = torch.from_numpy(arr).unsqueeze(0)
+#     if device.type == 'cuda' and USE_FP16_IF_CUDA:
+#         tensor = tensor.half().to(device, non_blocking=True)
+#     else:
+#         tensor = tensor.to(device, non_blocking=True)
+#     return tensor
+
+# def ms_to_time_str(t_ms):
+#     ms = int(t_ms % 1000)
+#     total_seconds = int(t_ms // 1000)
+#     minutes = total_seconds // 60
+#     seconds = total_seconds % 60
+#     return f"{minutes:02d}:{seconds:02d}:{ms:03d}"
+
+# # ---------- per-run tracking ----------
+# RUNS = {}
+# RUNS_LOCK = threading.Lock()
+
+# def process_video_to_csv(video_path: str, run_id: str):
+#     """
+#     FIXED: Exact logic from working version
+#     """
+#     global _hinder_counters, _prev_gray_for_hinder
+#     _hinder_counters = {k: 0 for k in _hinder_counters}
+#     _prev_gray_for_hinder = None
+
+#     buf = StringIO()
+#     writer = csv.writer(buf)
+#     today_str = datetime.now().strftime("%Y-%m-%d")
+#     writer.writerow(["date", "timestamp_ms", "count", "alert"])
+
+#     cap = cv2.VideoCapture(video_path)
+#     if not cap.isOpened():
+#         print("Cannot open video:", video_path)
+#         with RUNS_LOCK:
+#             RUNS[run_id]["csv"] = buf.getvalue()
+#             RUNS[run_id]["done"] = True
+#         return
+
+#     smoother = []
+#     processed = 0
+#     last_flush = time.time()
+#     start_wall = time.time()
+
+#     with torch.no_grad():
+#         while True:
+#             ok, frame = cap.read()
+#             if not ok:
+#                 print("End of video reached.")
+#                 break
+
+#             if processed % SKIP_FRAMES != 0:
+#                 processed += 1
+#                 continue
+
+#             # enhance and prepare
+#             enhanced = enhance_frame(frame, gamma=1.6, use_clahe=True, denoise=False)
+#             inp = frame_to_tensor(enhanced)
+
+#             # forward
+#             out = model(inp)
+
+#             # FIXED: Exact fp16 handling from working version
+#             if device.type == 'cuda' and USE_FP16_IF_CUDA:
+#                 out_f = out.float()
+#             else:
+#                 out_f = out
+
+#             # FIXED: Safety ReLU
+#             out_f = torch.relu(out_f)
+
+#             # FIXED: CRITICAL - get dmap on CPU as float32 (was missing!)
+#             if device.type == 'cuda' and USE_FP16_IF_CUDA:
+#                 dmap = out_f.float().squeeze(0).squeeze(0)  # HxW float32 on CPU
+#             else:
+#                 dmap = out_f.squeeze(0).squeeze(0)
+
+#             orig_h, orig_w = frame.shape[:2]
+            
+#             # FIXED: Correct feed size extraction (width, height order)
+#             if FRAME_RESIZE is not None:
+#                 feed_w, feed_h = FRAME_RESIZE  # (512, 384) -> width=512, height=384
+#             else:
+#                 feed_h, feed_w = inp.shape[2], inp.shape[3]  # H, W from tensor
+
+#             # FIXED: Exact count calculation logic
+#             if UPSAMPLE_DMAP:
+#                 dmap_unsq = dmap.unsqueeze(0).unsqueeze(0)
+#                 dmap_up = F.interpolate(dmap_unsq, size=(orig_h, orig_w), mode='bilinear', align_corners=False)
+#                 dmap_up = dmap_up.squeeze(0).squeeze(0)
+#                 count_val = float(dmap_up.sum().item())
+#             elif SCALE_BY_AREA:
+#                 raw_count = float(dmap.sum().item())
+#                 scale = (orig_h * orig_w) / (feed_h * feed_w)
+#                 count_val = raw_count * scale
+#             else:
+#                 count_val = float(dmap.sum().item())
+
+#             # smoothing
+#             if SMOOTH_WINDOW and SMOOTH_WINDOW > 1:
+#                 smoother.append(count_val)
+#                 if len(smoother) > SMOOTH_WINDOW:
+#                     smoother.pop(0)
+#                 display_count = sum(smoother) / len(smoother)
+#             else:
+#                 display_count = count_val
+
+#             t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
+#             time_str = ms_to_time_str(t_ms)
+
+#             # camera hinderance check
+#             is_hindered, reason = check_camera_hinder(frame)
+#             alert_field = reason if is_hindered else ""
+#             if is_hindered:
+#                 display_count = 0.00
+
+#             writer.writerow([
+#                 today_str,
+#                 time_str,
+#                 f"{display_count:.3f}",
+#                 alert_field
+#             ])
+
+#             processed += 1
+
+#             if time.time() - last_flush > FLUSH_INTERVAL:
+#                 buf.flush()
+#                 last_flush = time.time()
+
+#             if processed % PRINT_EVERY == 0:
+#                 elapsed = time.time() - start_wall
+#                 fps_eff = processed / elapsed if elapsed > 0 else 0
+#                 print(f"Processed {processed} frames (effective FPS: {fps_eff:.2f}), last count {display_count:.2f}")
+
+#     cap.release()
+#     csv_text = buf.getvalue()
+#     buf.close()
+
+#     with RUNS_LOCK:
+#         RUNS[run_id]["csv"] = csv_text
+#         RUNS[run_id]["done"] = True
+
+#     print("Finished. Stored CSV in memory for run_id:", run_id)
+
+# def run_processing(video_path: str, run_id: str):
+#     with RUNS_LOCK:
+#         RUNS[run_id] = {"csv": "", "done": False}
+#     process_video_to_csv(video_path, run_id)
+#     try:
+#         os.remove(video_path)
+#     except OSError:
+#         pass
+
+# # FastAPI app (unchanged)
+# app = FastAPI(title="Video Analytics API")
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+
+# @app.post("/process_video/")
+# async def process_video(background_tasks: BackgroundTasks, video: UploadFile = File(...)):
+#     run_id = str(int(time.time() * 1000))
+#     print(f"[process_video] run_id={run_id}")
+
+#     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+#         temp_video_path = tmp.name
+#         print(f"[process_video] writing temp video to: {temp_video_path}")
+#         while True:
+#             chunk = await video.read(1024 * 1024)
+#             if not chunk:
+#                 break
+#             tmp.write(chunk)
+
+#     background_tasks.add_task(run_processing, temp_video_path, run_id)
+#     return {"status": "processing_started", "run_id": run_id}
+
+# @app.get("/crowd_txt/{run_id}")
+# async def crowd_txt(run_id: str):
+#     with RUNS_LOCK:
+#         run_info = RUNS.get(run_id)
+#     if not run_info:
+#         return JSONResponse({"csv": "", "done": True})
+#     return JSONResponse({
+#         "csv": run_info.get("csv", ""),
+#         "done": run_info.get("done", False)
+#     })
+
+// main.py 
+// import React, { useState, useEffect, useRef } from "react";
+// import { useNavigate } from "react-router-dom";
+// import CsvViewer from "../components/CsvViewer";
+
+// const API_BASE = "http://localhost:8000"; // backend URL
+
+// function useWindowWidth() {
+//   const [width, setWidth] = useState(window.innerWidth);
+//   useEffect(() => {
+//     const handleResize = () => setWidth(window.innerWidth);
+//     window.addEventListener("resize", handleResize);
+//     return () => window.removeEventListener("resize", handleResize);
+//   }, []);
+//   return width;
+// }
+
+// function MainPage({ user }) {
+//   const navigate = useNavigate();
+
+//   const [systemSettingsOpen, setSystemSettingsOpen] = useState(false);
+//   const systemSettingsRef = useRef(null);
+
+//   const [selectedSystemCamera, setSelectedSystemCamera] = useState("");
+//   // const [uploadedVideoURL, setUploadedVideoURL] = useState(null);
+//   const [uploadedVideoFile, setUploadedVideoFile] = useState(null);
+
+//   const [crowdTxtMap, setCrowdTxtMap] = useState({});
+//   const [pollTimers, setPollTimers] = useState({});
+
+//   const width = useWindowWidth();
+//   const isMobile = width < 700;
+
+//   // Clear polling timers on unmount
+//   useEffect(() => {
+//     return () => {
+//       Object.values(pollTimers).forEach((id) => clearInterval(id));
+//     };
+//   }, [pollTimers]);
+
+//   const styles = {
+//     page: {
+//       backgroundColor: "#020617",
+//       minHeight: "100vh",
+//       padding: isMobile ? "18px 4vw" : "32px 56px",
+//       fontFamily:
+//         "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+//       color: "#e5e7eb",
+//       display: "flex",
+//       flexDirection: "column",
+//       gap: isMobile ? 18 : 28,
+//       position: "relative",
+//       animation: "fadeInDown 0.6s",
+//       boxSizing: "border-box",
+//     },
+//     welcomeRow: {
+//       display: "flex",
+//       flexDirection: isMobile ? "column" : "row",
+//       justifyContent: "space-between",
+//       alignItems: isMobile ? "flex-start" : "center",
+//       marginBottom: isMobile ? 12 : 20,
+//       width: "100%",
+//     },
+//     brandTitle: {
+//       fontSize: isMobile ? 14 : 16,
+//       textTransform: "uppercase",
+//       letterSpacing: "0.22em",
+//       color: "#9ca3af",
+//       marginBottom: 4,
+//     },
+//     welcomeText: {
+//       fontSize: isMobile ? 20 : 26,
+//       fontWeight: 600,
+//       color: "#e5e7eb",
+//     },
+//     welcomeSubtext: {
+//       marginTop: 4,
+//       fontSize: 13,
+//       color: "#6b7280",
+//     },
+//     cameraPairsContainer: {
+//       display: "flex",
+//       flexDirection: "column",
+//       gap: isMobile ? 12 : 24,
+//       flexWrap: "nowrap",
+//       animation: "fadeIn 0.7s",
+//       width: "100%",
+//     },
+//     cameraPair: {
+//       display: isMobile ? "block" : "flex",
+//       gap: isMobile ? 12 : 20,
+//       alignItems: isMobile ? "stretch" : "flex-start",
+//       width: "100%",
+//       marginBottom: isMobile ? 10 : 0,
+//     },
+//     cameraCard: {
+//       backgroundColor: "#020617",
+//       borderRadius: 16,
+//       boxShadow: "0 16px 40px rgba(15,23,42,0.9)",
+//       overflow: "hidden",
+//       paddingBottom: 16,
+//       animation: "fadeInUp 0.7s",
+//       flex: isMobile ? "unset" : "1 1 50%",
+//       minWidth: isMobile ? "100%" : 360,
+//       position: "relative",
+//       border: "1px solid #1f2937",
+//       transition: "transform 0.2s ease, box-shadow 0.2s ease",
+//     },
+//     cameraTitle: {
+//       padding: isMobile ? "10px 12px 4px" : "14px 18px 4px",
+//       borderBottom: "1px solid #111827",
+//       backgroundColor: "#020617",
+//     },
+//     cameraNameInput: {
+//       width: "100%",
+//       padding: isMobile ? 7 : 9,
+//       fontSize: isMobile ? 13 : 15,
+//       borderRadius: 10,
+//       border: "1px solid #1f2937",
+//       backgroundColor: "#020617",
+//       color: "#e5e7eb",
+//       fontWeight: 500,
+//       outline: "none",
+//       boxSizing: "border-box",
+//     },
+//     cameraFrame: {
+//       width: "100%",
+//       height: isMobile ? 180 : 360,
+//       backgroundColor: "#020617",
+//       borderRadius: 14,
+//       display: "flex",
+//       justifyContent: "center",
+//       alignItems: "center",
+//       overflow: "hidden",
+//       position: "relative",
+//       marginTop: 8,
+//       marginBottom: 10,
+//       padding: 8,
+//       boxSizing: "border-box",
+//     },
+//     cameraVideo: {
+//       width: "100%",
+//       height: "100%",
+//       objectFit: "contain",
+//       borderRadius: "14px",
+//       backgroundColor: "#000",
+//     },
+//     csvBox: {
+//       width: "100%",
+//       height: "100%",
+//       borderRadius: 12,
+//       border: "1px solid #1f2937",
+//       backgroundColor: "#020617",
+//       padding: 10,
+//       boxSizing: "border-box",
+//       display: "flex",
+//       flexDirection: "column",
+//     },
+//     csvTitle: {
+//       fontSize: 13,
+//       fontWeight: 600,
+//       color: "#93c5fd",
+//       marginBottom: 6,
+//     },
+//     csvContent: {
+//       flex: 1,
+//       fontSize: 11,
+//       lineHeight: 1.4,
+//       color: "#e5e7eb",
+//       whiteSpace: "pre-wrap",
+//       overflowY: "auto",
+//       paddingRight: 4,
+//     },
+//     cameraSettings: {
+//       marginTop: 8,
+//       padding: isMobile ? "0 10px" : "0 18px",
+//       fontSize: 13,
+//     },
+//     toggleSwitch: {
+//       marginTop: 10,
+//       padding: isMobile ? "0 10px" : "0 18px",
+//       display: "flex",
+//       alignItems: "center",
+//       justifyContent: "space-between",
+//     },
+//     toggleLabel: {
+//       fontWeight: 500,
+//       fontSize: isMobile ? 13 : 14,
+//       color: "#e5e7eb",
+//     },
+//     deleteCameraBtn: {
+//       position: "absolute",
+//       top: 20,
+//       right: 20,
+//       backgroundColor: "#b91c1c",
+//       border: "1px solid #fecaca",
+//       borderRadius: 999,
+//       color: "#fee2e2",
+//       cursor: "pointer",
+//       padding: "6px 12px",
+//       fontWeight: 600,
+//       fontSize: 11,
+//       zIndex: 10,
+//     },
+//     buttonRow: {
+//       marginTop: isMobile ? 20 : 28,
+//       display: "flex",
+//       justifyContent: "center",
+//       gap: isMobile ? 10 : 16,
+//       flexWrap: "wrap",
+//       animation: "fadeInUp 0.7s",
+//     },
+//     actionButton: {
+//       backgroundColor: "#1d4ed8",
+//       color: "#e5e7eb",
+//       borderRadius: 999,
+//       padding: isMobile ? "11px 14px" : "12px 20px",
+//       fontSize: isMobile ? 14 : 15,
+//       fontWeight: 600,
+//       cursor: "pointer",
+//       border: "none",
+//       boxShadow: "0 12px 30px rgba(37,99,235,0.35)",
+//       letterSpacing: "0.03em",
+//       minWidth: isMobile ? "100%" : 210,
+//     },
+//     addCameraBtn: {
+//       marginTop: 16,
+//       backgroundColor: "#111827",
+//       color: "#e5e7eb",
+//       borderRadius: 999,
+//       padding: isMobile ? "10px 14px" : "11px 20px",
+//       fontSize: 14,
+//       fontWeight: 500,
+//       cursor: "pointer",
+//       border: "1px solid #374151",
+//       minWidth: isMobile ? "100%" : 260,
+//       alignSelf: "center",
+//     },
+//     sidePanel: {
+//       position: isMobile ? "static" : "fixed",
+//       top: isMobile ? undefined : 96,
+//       right: isMobile ? undefined : 28,
+//       width: isMobile ? "100%" : 340,
+//       backgroundColor: "#020617",
+//       boxShadow: "0 16px 45px rgba(15,23,42,0.95)",
+//       borderRadius: 20,
+//       padding: isMobile ? 14 : 18,
+//       zIndex: 90,
+//       animation: "fadeInUp 0.5s",
+//       color: "#e5e7eb",
+//       border: "1px solid #1f2937",
+//       boxSizing: "border-box",
+//       marginTop: isMobile ? 16 : 0,
+//     },
+//     sidePanelTitle: {
+//       fontWeight: 600,
+//       fontSize: isMobile ? 15 : 17,
+//       marginBottom: 10,
+//       color: "#93c5fd",
+//     },
+//     closeBtn: {
+//       marginTop: 10,
+//       width: "100%",
+//       backgroundColor: "#111827",
+//       color: "#e5e7eb",
+//       border: "1px solid #374151",
+//       borderRadius: 999,
+//       padding: "7px 10px",
+//       fontSize: 13,
+//       cursor: "pointer",
+//     },
+//     systemSelect: {
+//       width: "100%",
+//       padding: 8,
+//       borderRadius: 10,
+//       border: "1px solid #374151",
+//       backgroundColor: "#020617",
+//       color: "#e5e7eb",
+//       marginBottom: 12,
+//       fontSize: 13,
+//     },
+//     uploadInput: {
+//       marginTop: 4,
+//       marginBottom: 10,
+//       fontSize: 13,
+//     },
+//     downloadBtn: {
+//       padding: "4px 10px",
+//       fontSize: 11,
+//       borderRadius: 999,
+//       border: "1px solid #4b5563",
+//       backgroundColor: "#020617",
+//       color: "#ef1111ff",
+//       cursor: "pointer",
+//       marginLeft: 8,
+//       whiteSpace: "nowrap",
+//       opacity: 0.9,
+//     },
+//     downloadBtnDisabled: {
+//       opacity: 0.4,
+//       cursor: "not-allowed",
+//     },
+
+//   };
+
+//   const [cameraPairs, setCameraPairs] = useState([
+//     {
+//       pairId: 0,
+//       cameras: [
+//       ],
+//     },
+//   ]);
+
+//   const [availableCameras] = useState([
+//     "Integrated Webcam",
+//     "USB Camera 1",
+//     "USB Camera 2",
+//     "Virtual Camera",
+//   ]);
+
+//   useEffect(() => {
+//     function handleClickOutside(event) {
+//       if (
+//         systemSettingsRef.current &&
+//         !systemSettingsRef.current.contains(event.target) &&
+//         systemSettingsOpen
+//       ) {
+//         setSystemSettingsOpen(false);
+//       }
+//     }
+
+//     document.addEventListener("mousedown", handleClickOutside);
+//     return () => {
+//       document.removeEventListener("mousedown", handleClickOutside);
+//     };
+//   }, [systemSettingsOpen]);
+
+//   const toggleCamera = (pairId, cameraId) => {
+//     setCameraPairs((pairs) =>
+//       pairs.map((pair) =>
+//         pair.pairId === pairId
+//           ? {
+//             ...pair,
+//             cameras: pair.cameras.map((cam) =>
+//               cam.id === cameraId ? { ...cam, on: !cam.on } : cam
+//             ),
+//           }
+//           : pair
+//       )
+//     );
+//   };
+
+//   const updateCameraName = (pairId, cameraId, newName) => {
+//     setCameraPairs((pairs) =>
+//       pairs.map((pair) =>
+//         pair.pairId === pairId
+//           ? {
+//             ...pair,
+//             cameras: pair.cameras.map((cam) =>
+//               cam.id === cameraId ? { ...cam, name: newName } : cam
+//             ),
+//           }
+//           : pair
+//       )
+//     );
+//   };
+
+//   // Upload + live CSV polling
+//   const uploadVideoFile = async (pairId, cameraId, file) => {
+//     if (!file) return;
+
+//     const formData = new FormData();
+//     formData.append("video", file); // 👈 MUST be "video" to match backend
+
+//     // show video immediately on left
+//     setCameraPairs((pairs) =>
+//       pairs.map((pair) =>
+//         pair.pairId === pairId
+//           ? {
+//             ...pair,
+//             cameras: pair.cameras.map((cam) =>
+//               cam.id === cameraId
+//                 ? {
+//                   ...cam,
+//                   src: URL.createObjectURL(file),
+//                   uploadedFile: file,
+//                 }
+//                 : cam
+//             ),
+//           }
+//           : pair
+//       )
+//     );
+
+//     let runId;
+//     try {
+//       // const res = await fetch(`${API_BASE}/process_video/`, {
+//       //   method: "POST",
+//       //   body: formData,
+//       // });
+//       const res = await fetch(`${API_BASE}/analytics/process_video/`, {
+//         method: "POST",
+//         body: formData,
+//       });
+
+//       if (!res.ok) {
+//         console.error("process_video failed:", res.status, await res.text());
+//         return;
+//       }
+//       const data = await res.json();
+//       runId = data.run_id;
+//       if (!runId) {
+//         console.error("No run_id returned from backend:", data);
+//         return;
+//       }
+//     } catch (err) {
+//       console.error("Error starting processing:", err);
+//       return;
+//     }
+
+//     // stop old poller for this pair
+//     if (pollTimers[pairId]) {
+//       clearInterval(pollTimers[pairId]);
+//     }
+
+//     let intervalId;
+
+//     const poll = () => {
+//       // fetch(`${API_BASE}/analytics/crowd_txt/?run_id=${encodeURIComponent(runId)}`)
+//       fetch(`${API_BASE}/analytics/crowd_txt/${encodeURIComponent(runId)}`)
+//         .then((r) => r.json())
+//         .then((data) => {
+//           if (!data) return;
+//           const { csv, done } = data;
+//           setCrowdTxtMap((prev) => ({
+//             ...prev,
+//             [pairId]: csv || "",
+//           }));
+
+//           if (done && intervalId) {
+//             clearInterval(intervalId);
+//             setPollTimers((prev) => {
+//               const copy = { ...prev };
+//               delete copy[pairId];
+//               return copy;
+//             });
+//           }
+//         })
+//         .catch((err) => {
+//           console.error("Error fetching crowd_txt:", err);
+//         });
+//     };
+
+
+
+//     intervalId = setInterval(poll, 500);
+//     setPollTimers((prev) => ({ ...prev, [pairId]: intervalId }));
+//     poll(); // first immediate call
+//   };
+
+
+//   const addCameraPair = () => {
+//     const newPairId = cameraPairs.length
+//       ? cameraPairs[cameraPairs.length - 1].pairId + 1
+//       : 1;
+//     const baseCamId = cameraPairs.reduce(
+//       (max, pair) => Math.max(max, ...pair.cameras.map((c) => c.id)),
+//       0
+//     );
+
+//     setCameraPairs((prev) => [
+//       ...prev,
+//       {
+//         pairId: newPairId,
+//         cameras: [
+//           {
+//             id: baseCamId + 1,
+//             name: `Camera ${newPairId}`,
+//             src: "",
+//             on: true,
+//             uploadedFile: null,
+//           },
+//           {
+//             id: baseCamId + 2,
+//             name: `Crowd Log ${newPairId}`,
+//             src: "",
+//             on: true,
+//             uploadedFile: null,
+//           },
+//         ],
+//       },
+//     ]);
+//   };
+
+//   const deleteCameraPair = (pairId) => {
+//     if (pairId === 0) return;
+
+//     // stop polling for this pair
+//     if (pollTimers[pairId]) {
+//       clearInterval(pollTimers[pairId]);
+//       setPollTimers((prev) => {
+//         const copy = { ...prev };
+//         delete copy[pairId];
+//         return copy;
+//       });
+//     }
+
+//     setCameraPairs((pairs) => pairs.filter((pair) => pair.pairId !== pairId));
+//     setCrowdTxtMap((prev) => {
+//       const copy = { ...prev };
+//       delete copy[pairId];
+//       return copy;
+//     });
+//   };
+
+//   const addSystemCamera = () => {
+//     if (!selectedSystemCamera) return;
+//     const newPairId = cameraPairs.length
+//       ? cameraPairs[cameraPairs.length - 1].pairId + 1
+//       : 1;
+
+//     setCameraPairs((prev) => [
+//       ...prev,
+//       {
+//         pairId: newPairId,
+//         cameras: [
+//           {
+//             id: newPairId * 2 - 1,
+//             name: `${selectedSystemCamera} - Real`,
+//             src: "",
+//             on: true,
+//             uploadedFile: null,
+//           },
+//           {
+//             id: newPairId * 2,
+//             name: `${selectedSystemCamera}b - Crowd CSV`,
+//             src: "",
+//             on: true,
+//             uploadedFile: null,
+//           },
+//         ],
+//       },
+//     ]);
+//     setSelectedSystemCamera("");
+//     setSystemSettingsOpen(false);
+//   };
+
+//   // const addUploadedVideo = () => {
+//   //   if (!uploadedVideoFile) return;
+
+//   //   const newPairId = cameraPairs.length
+//   //     ? cameraPairs[cameraPairs.length - 1].pairId + 1
+//   //     : 1;
+//   //   const baseCamId = cameraPairs.reduce(
+//   //     (max, pair) => Math.max(max, ...pair.cameras.map((c) => c.id)),
+//   //     0
+//   //   );
+//   //   const leftCamId = baseCamId + 1;
+//   //   const rightCamId = baseCamId + 2;
+
+//   //   setCameraPairs((prev) => [
+//   //     ...prev,
+//   //     {
+//   //       pairId: newPairId,
+//   //       cameras: [
+//   //         {
+//   //           id: leftCamId,
+//   //           name: `Uploaded Video ${newPairId} - Real`,
+//   //           src: "",
+//   //           on: true,
+//   //           uploadedFile: null,
+//   //         },
+//   //         {
+//   //           id: rightCamId,
+//   //           name: `Uploaded Video ${newPairId}b - Crowd CSV`,
+//   //           src: "",
+//   //           on: true,
+//   //           uploadedFile: null,
+//   //         },
+//   //       ],
+//   //     },
+//   //   ]);
+
+//   //   // start upload + CSV polling for this pair
+//   //   uploadVideoFile(newPairId, leftCamId, uploadedVideoFile);
+
+//   //   setUploadedVideoURL(null);
+//   //   setUploadedVideoFile(null);
+//   //   setSystemSettingsOpen(false);
+//   // };
+
+
+//   const downloadCsvForPair = (pairId, cameraName) => {
+//     const csvText = crowdTxtMap[pairId];
+//     if (!csvText) {
+//       alert("No CSV data available yet for this camera.");
+//       return;
+//     }
+
+//     // make a safe filename from camera name
+//     const safeName =
+//       (cameraName || "crowd_output").toLowerCase().replace(/[^a-z0-9]+/g, "_") ||
+//       "crowd_output";
+
+//     const blob = new Blob([csvText], {
+//       type: "text/csv;charset=utf-8;",
+//     });
+//     const url = URL.createObjectURL(blob);
+
+//     const link = document.createElement("a");
+//     link.href = url;
+//     link.setAttribute("download", `${safeName}.csv`);
+//     document.body.appendChild(link);
+//     link.click();
+//     document.body.removeChild(link);
+//     URL.revokeObjectURL(url);
+//   };
+
+
+//   return (
+//     <div style={styles.page}>
+//       <div style={styles.welcomeRow}>
+//         <div>
+//           <div style={styles.brandTitle}>VigilNet</div>
+//           <div style={styles.welcomeText}>Welcome to VigilNet</div>
+//           <div style={styles.welcomeSubtext}>
+//             Intelligent CCTV and crowd monitoring console
+//           </div>
+//         </div>
+//       </div>
+
+//       <div style={styles.cameraPairsContainer}>
+//         {cameraPairs.map((pair) => {
+//           const isCamera0 = pair.pairId === 0;
+
+//           return (
+//             <div key={pair.pairId} style={styles.cameraPair}>
+//               {pair.cameras.map((cam) => {
+//                 const isModelVideo = cam.name.toLowerCase().includes("b");
+
+//                 // detect if this camera should be rendered as video
+//                 const isVideo =
+//                   (cam.uploadedFile &&
+//                     cam.uploadedFile.type &&
+//                     cam.uploadedFile.type.startsWith("video")) ||
+//                   (cam.src &&
+//                     (cam.src.endsWith(".mp4") ||
+//                       cam.src.endsWith(".webm") ||
+//                       cam.src.startsWith("blob:")));
+
+//                 return (
+//                   <div key={cam.id} style={styles.cameraCard}>
+//                     <div style={styles.cameraTitle}>
+//                       <input
+//                         type="text"
+//                         value={cam.name}
+//                         onChange={(e) =>
+//                           updateCameraName(pair.pairId, cam.id, e.target.value)
+//                         }
+//                         style={styles.cameraNameInput}
+//                         disabled={isCamera0}
+//                       />
+//                     </div>
+
+//                     <div style={styles.cameraFrame}>
+//                       {cam.on ? (
+//                         isModelVideo ? (
+//                           isCamera0 ? (
+//                             <div style={styles.csvBox}>
+//                               <div style={styles.csvTitle}>
+//                                 Sample Crowd CSV (simulated live)
+//                               </div>
+//                             </div>
+//                           ) : (
+//                             <div style={styles.csvBox}>
+//                               <div
+//                                 style={{
+//                                   display: "flex",
+//                                   alignItems: "center",
+//                                   justifyContent: "space-between",
+//                                   marginBottom: 6,
+//                                 }}
+//                               >
+//                                 <div style={styles.csvTitle}>Crowd CSV (live)</div>
+//                                 <button
+//                                   type="button"
+//                                   onClick={() => downloadCsvForPair(pair.pairId, cam.name)}
+//                                   disabled={!crowdTxtMap[pair.pairId]}
+//                                   style={{
+//                                     ...styles.downloadBtn,
+//                                     ...(crowdTxtMap[pair.pairId] ? {} : styles.downloadBtnDisabled),
+//                                   }}
+//                                 >
+//                                   Download CSV
+//                                 </button>
+//                               </div>
+
+//                               <CsvViewer
+//                                 csvText={crowdTxtMap[pair.pairId]}
+//                                 fallbackMessage="Upload a video on the left to stream output_with_hinderance.csv from backend."
+//                                 styleOverride={styles.csvContent}
+//                               />
+//                             </div>
+
+//                           )
+//                         ) : (
+//                           <>
+//                             {!cam.src ? (
+//                               <div
+//                                 style={{
+//                                   color: "#6b7280",
+//                                   fontSize: 13,
+//                                   fontStyle: "italic",
+//                                 }}
+//                               >
+//                                 Upload a video to begin
+//                               </div>
+//                             ) : isVideo ? (
+//                               <video
+//                                 autoPlay
+//                                 muted
+//                                 loop
+//                                 playsInline
+//                                 disablePictureInPicture
+//                                 controls={false}
+//                                 style={styles.cameraVideo}
+//                                 src={cam.src}
+//                                 onContextMenu={(e) => e.preventDefault()}
+//                                 onPause={(e) => e.target.play()}   // force play again
+//                               />
+
+
+//                             ) : (
+//                               <img
+//                                 style={styles.cameraVideo}
+//                                 alt={`${cam.name} Feed`}
+//                                 src={cam.src}
+//                               />
+//                             )}
+//                           </>
+//                         )
+//                       ) : (
+//                         <div
+//                           style={{
+//                             color: "#6b7280",
+//                             fontStyle: "italic",
+//                             fontSize: 13,
+//                           }}
+//                         >
+//                           Camera Off
+//                         </div>
+//                       )}
+//                     </div>
+
+//                     <div style={styles.toggleSwitch}>
+//                       <label style={styles.toggleLabel}>{cam.name} On/Off</label>
+//                       <input
+//                         type="checkbox"
+//                         checked={cam.on}
+//                         onChange={() => toggleCamera(pair.pairId, cam.id)}
+//                       />
+//                     </div>
+
+//                     {/* Upload input only for non-sample, left (real) cameras */}
+//                     {!isModelVideo && !isCamera0 && (
+//                       <div style={styles.cameraSettings}>
+//                         <label style={{ fontSize: 13 }}>
+//                           Upload Video:
+//                           <input
+//                             type="file"
+//                             accept="video/*"
+//                             onChange={(e) => {
+//                               if (e.target.files && e.target.files[0]) {
+//                                 uploadVideoFile(
+//                                   pair.pairId,
+//                                   cam.id,
+//                                   e.target.files[0]
+//                                 );
+//                               }
+//                             }}
+//                             style={styles.uploadInput}
+//                           />
+//                         </label>
+//                       </div>
+//                     )}
+
+//                     {!isCamera0 && cam.id === pair.cameras[0].id && (
+//                       <button
+//                         onClick={() => deleteCameraPair(pair.pairId)}
+//                         style={styles.deleteCameraBtn}
+//                         title="Delete this camera pair"
+//                       >
+//                         Delete
+//                       </button>
+//                     )}
+//                   </div>
+//                 );
+//               })}
+//             </div>
+//           );
+//         })}
+//       </div>
+
+//       <button style={styles.addCameraBtn} onClick={addCameraPair}>
+//         + Add New Feed
+//       </button>
+
+//       <div style={styles.buttonRow}>
+//         <button
+//           style={styles.actionButton}
+//           onClick={() => setSystemSettingsOpen((v) => !v)}
+//         >
+//           System Settings
+//         </button>
+
+//         <button
+//           style={styles.actionButton}
+//           onClick={() => navigate("/dashboard")}
+//         >
+//           Analytics Dashboard
+//         </button>
+
+//         <button
+//           style={styles.actionButton}
+//           onClick={() => navigate("/crowd_count_photo")}
+//         >
+//           Crowd Counting from Photo
+//         </button>
+//       </div>
+
+//       {systemSettingsOpen && (
+//         <div style={styles.sidePanel} ref={systemSettingsRef}>
+//           <div style={styles.sidePanelTitle}>System Settings</div>
+
+//           <label style={{ fontWeight: 600, fontSize: 13 }}>
+//             Select Camera:
+//           </label>
+//           <select
+//             value={selectedSystemCamera}
+//             onChange={(e) => setSelectedSystemCamera(e.target.value)}
+//             style={styles.systemSelect}
+//           >
+//             <option value="">-- Choose a camera --</option>
+//             {availableCameras.map((cam, idx) => (
+//               <option key={idx} value={cam}>
+//                 {cam}
+//               </option>
+//             ))}
+//           </select>
+
+//           <button
+//             disabled={!selectedSystemCamera}
+//             onClick={addSystemCamera}
+//             style={{
+//               ...styles.actionButton,
+//               width: "100%",
+//               opacity: selectedSystemCamera ? 1 : 0.5,
+//               marginBottom: 10,
+//             }}
+//           >
+//             Add Selected Camera
+//           </button>
+
+//           {/* If later you want to re-enable system settings upload: 
+//               you can put your previous upload+preview+addUploadedVideo
+//               block back here, it will work with the updated logic.
+//           */}
+
+//           <button
+//             onClick={() => setSystemSettingsOpen(false)}
+//             style={styles.closeBtn}
+//           >
+//             Close
+//           </button>
+//         </div>
+//       )}
+//     </div>
+//   );
+// }
+
+// export default MainPage;
+
+
+
+// Analytics.py 
+# import os
+# import time
+# import threading
+# import csv
+# from datetime import datetime
+# from io import StringIO
+# import tempfile
+
+# import cv2
+# import numpy as np
+# import torch
+# import torch.nn as nn
+# import torch.nn.functional as F
+# from fastapi import FastAPI, UploadFile, File, BackgroundTasks, Query
+# from fastapi.middleware.cors import CORSMiddleware
+# from starlette.responses import JSONResponse
+
+# # ---------------- SETTINGS ----------------
+# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# MODEL_PATH = os.path.join(BASE_DIR, "crowd_counting.pth")
+
+# # folder where all CSV outputs will be stored
+# OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+# os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# USE_GPU = True
+# USE_FP16_IF_CUDA = True
+# FRAME_RESIZE = (512, 384)           # (width, height)
+# SKIP_FRAMES = 10
+# SMOOTH_WINDOW = 3
+# FLUSH_INTERVAL = 2.0
+# PRINT_EVERY = 50
+# UPSAMPLE_DMAP = False
+# SCALE_BY_AREA = True
+# # ------------------------------------------
+
+# device = torch.device("cuda" if (USE_GPU and torch.cuda.is_available()) else "cpu")
+# print("Device:", device)
+
+# # ---------- Camera hinderance helpers ----------
+# _hinder_counters = {
+#     "frozen": 0,
+#     "covered": 0,
+# }
+# FROZEN_DIFF_THRESH = 2.0
+# FROZEN_FRAMES_THRESH = 5
+# COVERED_MEAN_THRESH = 15
+# COVERED_FRAMES_THRESH = 3
+# LOW_CONTRAST_STD_THRESH = 10.0
+# LOW_CONTRAST_FRAMES_THRESH = 5
+# DARK_PCT_THRESH = 0.50
+
+# _prev_gray_for_hinder = None
+
+
+# def check_camera_hinder(frame_bgr):
+#     """
+#     Inspect frame and update internal counters. Returns (is_hindered: bool, reason: str).
+#     """
+#     global _prev_gray_for_hinder, _hinder_counters
+
+#     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+#     mean = float(gray.mean())
+#     std = float(gray.std())
+
+#     if _prev_gray_for_hinder is None:
+#         diff_mean = 255.0
+#     else:
+#         diff = cv2.absdiff(gray, _prev_gray_for_hinder)
+#         diff_mean = float(diff.mean())
+
+#     # simple checks like in your working version
+#     if diff_mean < FROZEN_DIFF_THRESH:
+#         _hinder_counters["frozen"] += 1
+#     else:
+#         _hinder_counters["frozen"] = 0
+
+#     if mean < COVERED_MEAN_THRESH and std < LOW_CONTRAST_STD_THRESH:
+#         _hinder_counters["covered"] += 1
+#     else:
+#         _hinder_counters["covered"] = 0
+
+#     reason = ""
+#     if _hinder_counters["frozen"] >= FROZEN_FRAMES_THRESH:
+#         reason = "camera_frozen"
+#     elif _hinder_counters["covered"] >= COVERED_FRAMES_THRESH:
+#         reason = "lens_covered_or_extremely_dark"
+
+#     _prev_gray_for_hinder = gray.copy()
+#     return bool(reason), reason
+
+
+# def enhance_frame(frame_bgr,
+#                   gamma=1.6,
+#                   use_clahe=True,
+#                   clahe_clip=2.0,
+#                   clahe_tile=(8, 8),
+#                   denoise=False):
+#     img = frame_bgr.copy()
+#     if gamma != 1.0:
+#         invGamma = 1.0 / gamma
+#         table = np.array([((i / 255.0) ** invGamma) * 255
+#                           for i in np.arange(256)]).astype("uint8")
+#         img = cv2.LUT(img, table)
+
+#     if use_clahe:
+#         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+#         h, s, v = cv2.split(hsv)
+#         clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=clahe_tile)
+#         v_clahe = clahe.apply(v)
+#         hsv_clahe = cv2.merge((h, s, v_clahe))
+#         img = cv2.cvtColor(hsv_clahe, cv2.COLOR_HSV2BGR)
+
+#     if denoise:
+#         img = cv2.fastNlMeansDenoisingColored(img, None, 10, 10, 7, 21)
+
+#     img = np.clip(img, 0, 255).astype(np.uint8)
+#     return img
+
+
+# # ---------- MCNN model ----------
+# class MC_CNN(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#         self.column1 = nn.Sequential(
+#             nn.Conv2d(3, 8, 9, padding='same'),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(8, 16, 7, padding='same'),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(16, 32, 7, padding='same'),
+#             nn.ReLU(),
+#             nn.Conv2d(32, 16, 7, padding='same'),
+#             nn.ReLU(),
+#             nn.Conv2d(16, 8, 7, padding='same'),
+#             nn.ReLU(),
+#         )
+#         self.column2 = nn.Sequential(
+#             nn.Conv2d(3, 10, 7, padding='same'),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(10, 20, 5, padding='same'),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(20, 40, 5, padding='same'),
+#             nn.ReLU(),
+#             nn.Conv2d(40, 20, 5, padding='same'),
+#             nn.ReLU(),
+#             nn.Conv2d(20, 10, 5, padding='same'),
+#             nn.ReLU(),
+#         )
+#         self.column3 = nn.Sequential(
+#             nn.Conv2d(3, 12, 5, padding='same'),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(12, 24, 3, padding='same'),
+#             nn.ReLU(),
+#             nn.MaxPool2d(2),
+#             nn.Conv2d(24, 48, 3, padding='same'),
+#             nn.ReLU(),
+#             nn.Conv2d(48, 24, 3, padding='same'),
+#             nn.ReLU(),
+#             nn.Conv2d(24, 12, 3, padding='same'),
+#             nn.ReLU(),
+#         )
+#         self.fusion_layer = nn.Sequential(
+#             nn.Conv2d(30, 1, 1, padding=0),
+#         )
+
+#     def forward(self, img_tensor):
+#         x1 = self.column1(img_tensor)
+#         x2 = self.column2(img_tensor)
+#         x3 = self.column3(img_tensor)
+#         x = torch.cat((x1, x2, x3), 1)
+#         x = self.fusion_layer(x)
+#         return x
+
+
+# def load_model(path, device):
+#     m = MC_CNN().to(device).eval()
+#     ckpt = torch.load(path, map_location=device)
+#     if isinstance(ckpt, dict) and 'state_dict' in ckpt:
+#         state = ckpt['state_dict']
+#     elif isinstance(ckpt, dict):
+#         state = ckpt
+#     elif isinstance(ckpt, nn.Module):
+#         ckpt.to(device).eval()
+#         return ckpt
+#     else:
+#         raise RuntimeError("Unsupported checkpoint format")
+
+#     new_state = {}
+#     for k, v in state.items():
+#         nk = k[len('module.'):] if k.startswith('module.') else k
+#         new_state[nk] = v
+
+#     missing, unexpected = m.load_state_dict(new_state, strict=False)
+#     if missing or unexpected:
+#         print("load_state_dict warnings:")
+#         if missing:
+#             print(" missing:", missing[:6], "...")
+#         if unexpected:
+#             print(" unexpected:", list(unexpected)[:6], "...")
+#     return m
+
+
+# model = load_model(MODEL_PATH, device)
+# if device.type == 'cuda' and USE_FP16_IF_CUDA:
+#     model.half()
+
+
+# def frame_to_tensor(frame_bgr):
+#     if FRAME_RESIZE is not None:
+#         frame_bgr = cv2.resize(frame_bgr, FRAME_RESIZE, interpolation=cv2.INTER_AREA)
+#     rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+#     arr = np.asarray(rgb, dtype=np.float32) / 255.0
+#     arr = np.transpose(arr, (2, 0, 1))
+#     tensor = torch.from_numpy(arr).unsqueeze(0)
+#     if device.type == 'cuda' and USE_FP16_IF_CUDA:
+#         tensor = tensor.half().to(device, non_blocking=True)
+#     else:
+#         tensor = tensor.to(device, non_blocking=True)
+#     return tensor
+
+
+# def ms_to_time_str(t_ms):
+#     # Kept same human-readable style (mm:ss:ms) – header still says timestamp_ns
+#     ms = int(t_ms % 1000)
+#     total_seconds = int(t_ms // 1000)
+#     minutes = total_seconds // 60
+#     seconds = total_seconds % 60
+#     return f"{minutes:02d}:{seconds:02d}:{ms:03d}"
+
+
+# # ---------- per-run tracking ----------
+# RUNS = {}  # run_id -> {"csv": str, "done": bool}
+# RUNS_LOCK = threading.Lock()
+
+
+# def process_video_to_csv(video_path: str, run_id: str, csv_path: str):
+#     """
+#     Process a single video → MCNN counts, hinder detection,
+#     write CSV to disk AND keep in-memory CSV string for live UI.
+#     CSV format: date,timestamp_ns,count,alert
+#     """
+#     global _hinder_counters, _prev_gray_for_hinder
+#     _hinder_counters = {k: 0 for k in _hinder_counters}
+#     _prev_gray_for_hinder = None
+
+#     # in-memory buffer (for frontend live display)
+#     buf = StringIO()
+#     mem_writer = csv.writer(buf)
+
+#     # header
+#     today_str = datetime.now().strftime("%Y-%m-%d")
+#     header = ["date", "timestamp_ns", "count", "alert"]
+#     mem_writer.writerow(header)
+
+#     # open video
+#     cap = cv2.VideoCapture(video_path)
+#     if not cap.isOpened():
+#         print("Cannot open video:", video_path)
+#         # still create an empty CSV with header on disk
+#         with open(csv_path, "w", newline="", encoding="utf-8") as f:
+#             disk_writer = csv.writer(f)
+#             disk_writer.writerow(header)
+#         with RUNS_LOCK:
+#             RUNS[run_id]["csv"] = buf.getvalue()
+#             RUNS[run_id]["done"] = True
+#         return
+
+#     # open disk CSV file
+#     f = open(csv_path, "w", newline="", encoding="utf-8")
+#     disk_writer = csv.writer(f)
+#     disk_writer.writerow(header)
+
+#     smoother = []
+#     processed = 0
+#     last_flush = time.time()
+#     start_wall = time.time()
+
+#     with torch.no_grad():
+#         while True:
+#             ok, frame = cap.read()
+#             if not ok:
+#                 print("End of video reached.")
+#                 break
+
+#             # skip frames logic (but no frame_index in CSV)
+#             if processed % SKIP_FRAMES != 0:
+#                 processed += 1
+#                 continue
+
+#             enhanced = enhance_frame(frame, gamma=1.6, use_clahe=True, denoise=False)
+#             inp = frame_to_tensor(enhanced)
+
+#             out = model(inp)
+
+#             if device.type == 'cuda' and USE_FP16_IF_CUDA:
+#                 out_f = out.float()
+#             else:
+#                 out_f = out
+
+#             out_f = torch.relu(out_f)
+
+#             if device.type == 'cuda' and USE_FP16_IF_CUDA:
+#                 dmap = out_f.float().squeeze(0).squeeze(0)
+#             else:
+#                 dmap = out_f.squeeze(0).squeeze(0)
+
+#             orig_h, orig_w = frame.shape[:2]
+
+#             if FRAME_RESIZE is not None:
+#                 feed_w, feed_h = FRAME_RESIZE
+#             else:
+#                 feed_h, feed_w = inp.shape[2], inp.shape[3]
+
+#             if UPSAMPLE_DMAP:
+#                 dmap_unsq = dmap.unsqueeze(0).unsqueeze(0)
+#                 dmap_up = F.interpolate(
+#                     dmap_unsq,
+#                     size=(orig_h, orig_w),
+#                     mode='bilinear',
+#                     align_corners=False
+#                 )
+#                 dmap_up = dmap_up.squeeze(0).squeeze(0)
+#                 count_val = float(dmap_up.sum().item())
+#             elif SCALE_BY_AREA:
+#                 raw_count = float(dmap.sum().item())
+#                 scale = (orig_h * orig_w) / (feed_h * feed_w)
+#                 count_val = raw_count * scale
+#             else:
+#                 count_val = float(dmap.sum().item())
+
+#             if SMOOTH_WINDOW and SMOOTH_WINDOW > 1:
+#                 smoother.append(count_val)
+#                 if len(smoother) > SMOOTH_WINDOW:
+#                     smoother.pop(0)
+#                 display_count = sum(smoother) / len(smoother)
+#             else:
+#                 display_count = count_val
+
+#             t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
+#             time_str = ms_to_time_str(t_ms)
+
+#             is_hindered, reason = check_camera_hinder(frame)
+#             alert_field = reason if is_hindered else ""
+#             if is_hindered:
+#                 display_count = 0.00
+
+#             row = [
+#                 today_str,
+#                 time_str,                 # label: timestamp_ns
+#                 f"{display_count:.3f}",
+#                 alert_field
+#             ]
+
+#             # write to in-memory + disk
+#             mem_writer.writerow(row)
+#             disk_writer.writerow(row)
+
+#             processed += 1
+
+#             # periodic "live" flush: update RUNS[run_id]["csv"] and disk
+#             if time.time() - last_flush > FLUSH_INTERVAL:
+#                 f.flush()
+#                 with RUNS_LOCK:
+#                     RUNS[run_id]["csv"] = buf.getvalue()
+#                 last_flush = time.time()
+
+#             if processed % PRINT_EVERY == 0:
+#                 elapsed = time.time() - start_wall
+#                 fps_eff = processed / elapsed if elapsed > 0 else 0
+#                 print(
+#                     f"Processed {processed} frames (effective FPS: {fps_eff:.2f}), "
+#                     f"last count {display_count:.2f}"
+#                 )
+
+#     cap.release()
+#     f.flush()
+#     f.close()
+
+#     csv_text = buf.getvalue()
+#     buf.close()
+
+#     with RUNS_LOCK:
+#         RUNS[run_id]["csv"] = csv_text
+#         RUNS[run_id]["done"] = True
+
+#     print("Finished. Stored CSV in memory and disk for run_id:", run_id)
+#     print("CSV saved at:", csv_path)
+
+
+# def run_processing(video_path: str, run_id: str):
+#     # initialize RUN entry
+#     with RUNS_LOCK:
+#         RUNS[run_id] = {"csv": "", "done": False}
+
+#     # each run gets its own csv file under output/
+#     csv_filename = f"output_with_hinderance_{run_id}.csv"
+#     csv_path = os.path.join(OUTPUT_DIR, csv_filename)
+
+#     process_video_to_csv(video_path, run_id, csv_path)
+
+#     # remove temporary uploaded video
+#     try:
+#         os.remove(video_path)
+#     except OSError:
+#         pass
+
+
+
+# app = FastAPI(title="Video Analytics API")
+
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+
+
+# # ========== CORE HANDLERS (no prefix) ==========
+
+# @app.post("/process_video/")
+# async def process_video(
+#     background_tasks: BackgroundTasks,
+#     video: UploadFile = File(...),
+# ):
+#     run_id = str(int(time.time() * 1000))
+#     print(f"[process_video] run_id={run_id}")
+
+#     # store uploaded video in a temp file
+#     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+#         temp_video_path = tmp.name
+#         print(f"[process_video] writing temp video to: {temp_video_path}")
+#         while True:
+#             chunk = await video.read(1024 * 1024)
+#             if not chunk:
+#                 break
+#             tmp.write(chunk)
+
+#     # run processing in background
+#     background_tasks.add_task(run_processing, temp_video_path, run_id)
+
+#     return {"status": "processing_started", "run_id": run_id}
+
+
+# @app.get("/crowd_txt/{run_id}")
+# async def crowd_txt(run_id: str):
+#     with RUNS_LOCK:
+#         run_info = RUNS.get(run_id)
+#     if not run_info:
+#         return JSONResponse({"csv": "", "done": True})
+#     return JSONResponse({
+#         "csv": run_info.get("csv", ""),
+#         "done": run_info.get("done", False),
+#     })
+
+
+# # ========== ALIASES WITH /analytics PREFIX ==========
+
+# # POST /analytics/process_video/  (same as /process_video/)
+# @app.post("/analytics/process_video/")
+# async def analytics_process_video(
+#     background_tasks: BackgroundTasks,
+#     video: UploadFile = File(...),
+# ):
+#     # just reuse the core handler
+#     return await process_video(background_tasks, video)
+
+
+# # GET /analytics/crowd_txt/?run_id=123  (query param style)
+# @app.get("/analytics/crowd_txt/")
+# async def analytics_crowd_txt_query(run_id: str = Query(...)):
+#     return await crowd_txt(run_id)
+
+
+# # GET /analytics/crowd_txt/123  (path param style)
+# @app.get("/analytics/crowd_txt/{run_id}")
+# async def analytics_crowd_txt_path(run_id: str):
+#     return await crowd_txt(run_id)
+
+
+// Dashboard.js 
+// import React, { useState, useEffect } from "react";
+// import { useNavigate } from "react-router-dom";
+// import {
+//   LineChart,
+//   Line,
+//   XAxis,
+//   YAxis,
+//   Tooltip,
+//   ResponsiveContainer,
+//   BarChart,
+//   Bar,
+//   CartesianGrid,
+//   Legend,
+//   Cell,
+//   ReferenceLine,
+// } from "recharts";
+
+// function useWindowWidth() {
+//   const [width, setWidth] = useState(window.innerWidth);
+//   useEffect(() => {
+//     const handleResize = () => setWidth(window.innerWidth);
+//     window.addEventListener("resize", handleResize);
+//     return () => window.removeEventListener("resize", handleResize);
+//   }, []);
+//   return width;
+// }
+
+// function Dashboard() {
+//   const navigate = useNavigate();
+
+//   const [csvFile, setCsvFile] = useState(null);
+
+//   // filtered data used by day-wise graphs
+//   const [graphData, setGraphData] = useState([]); // time-series records
+//   const [perSecondData, setPerSecondData] = useState([]);
+//   const [frameSeries, setFrameSeries] = useState([]);
+//   const [summary, setSummary] = useState(null);
+
+//   // raw (unfiltered) data for filters
+//   const [rawGraphData, setRawGraphData] = useState([]);
+//   const [rawPerSecondData, setRawPerSecondData] = useState([]);
+//   const [rawFrameSeries, setRawFrameSeries] = useState([]);
+
+//   // day-wise filter
+//   const [availableDates, setAvailableDates] = useState([]);
+//   const [selectedDate, setSelectedDate] = useState("");
+
+//   // month-wise filter
+//   const [availableMonths, setAvailableMonths] = useState([]);
+//   const [selectedMonth, setSelectedMonth] = useState("");
+//   const [monthDailyData, setMonthDailyData] = useState([]); // aggregated per day for month view
+
+//   // view mode: "day" or "month"
+//   const [viewMode, setViewMode] = useState("day");
+
+//   const [loading, setLoading] = useState(false);
+//   const [history, setHistory] = useState([]); // left-side history
+//   const [selectedHistory, setSelectedHistory] = useState(null);
+
+//   // thresholds
+//   const [minThreshold, setMinThreshold] = useState("");
+//   const [maxThreshold, setMaxThreshold] = useState("");
+
+//   // details toggles
+//   const [showTimeDetails, setShowTimeDetails] = useState(false);
+//   const [showPerSecondDetails, setShowPerSecondDetails] = useState(false);
+//   const [showFrameDetails, setShowFrameDetails] = useState(false);
+
+
+//   // year-wise filter
+//   const [availableYears, setAvailableYears] = useState([]);
+//   const [selectedYear, setSelectedYear] = useState("");
+//   const [yearMonthlyData, setYearMonthlyData] = useState([]); // aggregated per month for year view
+
+//   const [showMonthDetails, setShowMonthDetails] = useState(false);
+//   const [showYearDetails, setShowYearDetails] = useState(false);
+//   const [showMonthDetails2, setShowMonthDetails2] = useState(false);
+//   const [showMonthDetails3, setShowMonthDetails3] = useState(false);
+//   const [showYearDetails2, setShowYearDetails2] = useState(false);
+//   const [showYearDetails3, setShowYearDetails3] = useState(false);
+
+
+
+//   const width = useWindowWidth();
+//   const isMobile = width < 700;
+
+//   // parsed thresholds
+//   const parsedMin = parseFloat(minThreshold);
+//   const parsedMax = parseFloat(maxThreshold);
+//   const thresholdsActive =
+//     !Number.isNaN(parsedMin) && !Number.isNaN(parsedMax);
+
+//   // Theme colors
+//   const BG = "#020617";
+//   const BLUE = "#3b82f6";
+//   const CYAN = "#0ea5e9";
+//   const GREEN = "#22c55e";
+//   const RED = "#ef4444";
+//   const AMBER = "#facc15";
+//   const LENS_ALERT = "#a855f7";   // violet for lens_covered_or_extremely_dark
+//   const FREEZE_ALERT = "#f97316"; // orange for camera_frozen
+
+
+//   const styles = {
+//     page: {
+//       minHeight: "100vh",
+//       backgroundColor: BG,
+//       fontFamily:
+//         "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+//       display: "flex",
+//       justifyContent: "center",
+//       padding: isMobile ? "18px 4vw 32px" : "28px 28px 40px",
+//       boxSizing: "border-box",
+//     },
+//     content: {
+//       width: "100%",
+//       maxWidth: 1120,
+//       display: "flex",
+//       flexDirection: "column",
+//       gap: isMobile ? 16 : 20,
+//       animation: "fadeIn 0.5s ease-in",
+//     },
+//     topBar: {
+//       display: "flex",
+//       alignItems: "center",
+//       justifyContent: "flex-start",
+//       gap: 16,
+//       flexWrap: "wrap",
+//     },
+//     backBtn: {
+//       borderRadius: 999,
+//       border: "1px solid #1e293b",
+//       backgroundColor: "transparent",
+//       color: "#9ca3af",
+//       padding: "7px 16px",
+//       fontSize: 13,
+//       cursor: "pointer",
+//     },
+//     brandBlock: {
+//       display: "flex",
+//       flexDirection: "column",
+//       gap: 2,
+//       textAlign: "left",
+//     },
+//     brand: {
+//       fontSize: 11,
+//       textTransform: "uppercase",
+//       letterSpacing: "0.23em",
+//       color: "#6b7280",
+//     },
+//     header: {
+//       fontWeight: 600,
+//       fontSize: isMobile ? "1.25rem" : "1.6rem",
+//       color: "#e5e7eb",
+//     },
+//     subtitle: {
+//       fontSize: 12,
+//       color: "#9ca3af",
+//     },
+
+//     theoryCard: {
+//       background: "radial-gradient(circle at top left, #020617, #020617 60%)",
+//       borderRadius: 18,
+//       padding: isMobile ? "14px 14px" : "18px 18px",
+//       boxShadow: "0 24px 52px rgba(15,23,42,0.9)",
+//       border: "1px solid #111827",
+//     },
+//     theoryTitle: {
+//       fontSize: 14,
+//       textTransform: "uppercase",
+//       letterSpacing: "0.18em",
+//       color: "#9ca3af",
+//       marginBottom: 8,
+//     },
+//     theoryHeading: {
+//       fontSize: 15,
+//       fontWeight: 600,
+//       color: "#e5e7eb",
+//       marginBottom: 8,
+//     },
+//     theoryText: {
+//       fontSize: 13,
+//       color: "#9ca3af",
+//       lineHeight: 1.65,
+//     },
+//     theoryList: {
+//       marginTop: 10,
+//       paddingLeft: 18,
+//       fontSize: 13,
+//       color: "#9ca3af",
+//       lineHeight: 1.6,
+//     },
+
+//     mainRow: {
+//       display: "flex",
+//       flexDirection: isMobile ? "column" : "row",
+//       gap: 18,
+//       alignItems: "flex-start",
+//     },
+//     leftCol: {
+//       flex: isMobile ? "unset" : "0 0 280px",
+//       width: isMobile ? "100%" : 280,
+//       display: "flex",
+//       flexDirection: "column",
+//       gap: 14,
+//     },
+//     rightCol: {
+//       flex: 1,
+//       display: "flex",
+//       flexDirection: "column",
+//       gap: 14,
+//     },
+
+//     historyCard: {
+//       background: "radial-gradient(circle at top, #020617, #020617 70%)",
+//       borderRadius: 18,
+//       padding: isMobile ? "14px 14px" : "16px 16px",
+//       boxShadow: "0 22px 50px rgba(15,23,42,0.9)",
+//       border: "1px solid #111827",
+//     },
+//     historyTitle: {
+//       fontSize: 14,
+//       color: "#93c5fd",
+//       fontWeight: 600,
+//       marginBottom: 6,
+//     },
+//     historySub: {
+//       fontSize: 12,
+//       color: "#6b7280",
+//       marginBottom: 10,
+//     },
+//     historyList: {
+//       margin: 0,
+//       padding: 0,
+//       listStyle: "none",
+//       maxHeight: 260,
+//       overflowY: "auto",
+//     },
+//     historyItem: {
+//       padding: "7px 0",
+//       borderBottom: "1px solid rgba(15,23,42,0.9)",
+//     },
+//     historyName: {
+//       fontSize: 13,
+//       color: "#e5e7eb",
+//       marginBottom: 2,
+//       wordBreak: "break-all",
+//     },
+//     historyMeta: {
+//       fontSize: 11,
+//       color: "#9ca3af",
+//     },
+//     historyEmpty: {
+//       fontSize: 12,
+//       color: "#6b7280",
+//       marginTop: 6,
+//     },
+
+//     graphBox: {
+//       background: "radial-gradient(circle at top right, #020617, #020617 70%)",
+//       borderRadius: 18,
+//       border: "1px solid #111827",
+//       boxShadow: "0 24px 52px rgba(15,23,42,0.95)",
+//       padding: isMobile ? "16px 12px 20px" : "18px 18px 24px",
+//       display: "flex",
+//       flexDirection: "column",
+//       gap: 10,
+//     },
+//     graphTitle: {
+//       fontSize: 14,
+//       color: BLUE,
+//       fontWeight: 600,
+//     },
+//     graphSubtitle: {
+//       fontSize: 12,
+//       color: "#6b7280",
+//     },
+//     fileInput: {
+//       marginTop: 8,
+//       marginBottom: 10,
+//       padding: 7,
+//       borderRadius: 10,
+//       background: BG,
+//       color: "#e5e7eb",
+//       border: "1px solid #111827",
+//       fontSize: 13,
+//     },
+//     resetBtn: {
+//       backgroundColor: "#10b981",
+//       color: "#fff",
+//       padding: "8px 20px",
+//       borderRadius: 999,
+//       cursor: "pointer",
+//       border: "none",
+//       fontWeight: 600,
+//     },
+//     actionBtn: {
+//       backgroundColor: CYAN,
+//       color: "#0b1120",
+//       cursor: "pointer",
+//       border: "none",
+//       fontWeight: 600,
+//       padding: "7px 16px",
+//       borderRadius: 999,
+//       fontSize: 13,
+//     },
+//     selectedFile: {
+//       marginTop: 8,
+//       fontSize: 12,
+//       color: "#93c5fd",
+//       wordBreak: "break-all",
+//     },
+
+//     graphArea: {
+//       width: "100%",
+//       height: 320,
+//       marginTop: 4,
+//     },
+//     graphPlaceholder: {
+//       flex: 1,
+//       display: "flex",
+//       alignItems: "center",
+//       justifyContent: "center",
+//       fontSize: 13,
+//       color: CYAN,
+//       borderRadius: 12,
+//       border: "1px dashed #1e293b",
+//     },
+//     summaryRow: {
+//       display: "flex",
+//       flexWrap: "wrap",
+//       gap: 10,
+//       fontSize: 12,
+//       color: "#9ca3af",
+//       marginTop: 4,
+//     },
+//     summaryChip: {
+//       padding: "4px 10px",
+//       borderRadius: 999,
+//       border: "1px solid #1e293b",
+//     },
+//     thresholdRow: {
+//       display: "flex",
+//       flexWrap: "wrap",
+//       gap: 8,
+//       marginTop: 10,
+//       alignItems: "center",
+//       fontSize: 12,
+//       color: "#9ca3af",
+//     },
+//     thresholdInput: {
+//       width: 90,
+//       padding: "4px 8px",
+//       borderRadius: 999,
+//       border: "1px solid #1f2937",
+//       backgroundColor: "#020617",
+//       color: "#e5e7eb",
+//       fontSize: 12,
+//       outline: "none",
+//     },
+//     detailBtn: {
+//       alignSelf: "flex-end",
+//       marginTop: 4,
+//       padding: "4px 10px",
+//       fontSize: 11,
+//       borderRadius: 999,
+//       border: "1px solid #1f2937",
+//       backgroundColor: "#020617",
+//       color: "#9ca3af",
+//       cursor: "pointer",
+//     },
+//     detailPanel: {
+//       marginTop: 8,
+//       padding: "8px 10px",
+//       borderRadius: 12,
+//       border: "1px solid #1f2937",
+//       backgroundColor: "#020617",
+//       fontSize: 11,
+//       maxHeight: 160,
+//       overflowY: "auto",
+//       lineHeight: 1.5,
+//     },
+//     detailSectionTitle: {
+//       fontWeight: 600,
+//       marginTop: 4,
+//       marginBottom: 2,
+//       fontSize: 11,
+//     },
+//     dateSelect: {
+//       padding: "4px 8px",
+//       borderRadius: 999,
+//       border: "1px solid #1f2937",
+//       backgroundColor: "#020617",
+//       color: "#e5e7eb",
+//       fontSize: 12,
+//       outline: "none",
+//     },
+//     filterBtn: {
+//       backgroundColor: BLUE,
+//       color: "#f9fafb",
+//       border: "none",
+//       borderRadius: 999,
+//       padding: "6px 14px",
+//       fontSize: 12,
+//       cursor: "pointer",
+//       fontWeight: 500,
+//     },
+//     viewToggleRow: {
+//       display: "flex",
+//       flexWrap: "wrap",
+//       gap: 8,
+//       marginTop: 10,
+//       alignItems: "center",
+//       fontSize: 12,
+//       color: "#9ca3af",
+//     },
+//     viewToggleBtn: {
+//       padding: "5px 12px",
+//       borderRadius: 999,
+//       border: "1px solid #1f2937",
+//       backgroundColor: "#020617",
+//       color: "#9ca3af",
+//       fontSize: 12,
+//       cursor: "pointer",
+//     },
+//     viewToggleBtnActive: {
+//       backgroundColor: BLUE,
+//       color: "#f9fafb",
+//       borderColor: BLUE,
+//     },
+//   };
+
+//   // custom dot renderer for line charts based on thresholds
+//   // const renderColoredDot = (props) => {
+//   //   const { cx, cy, payload } = props;
+//   //   const value = payload.count;
+//   //   let fill = "#60a5fa";
+
+//   //   if (thresholdsActive) {
+//   //     if (value > parsedMax) fill = RED; // alert
+//   //     else if (value >= parsedMin && value <= parsedMax) fill = GREEN; // safe
+//   //     else fill = AMBER; // below min
+//   //   }
+
+//   //   return (
+//   //     <circle cx={cx} cy={cy} r={3} fill={fill} stroke={BG} strokeWidth={1} />
+//   //   );
+//   // };
+//   // custom dot renderer for line charts based on thresholds + alert type
+//   const renderColoredDot = (props) => {
+//     const { cx, cy, payload } = props;
+//     const value = payload.count;
+
+//     // alert can be: "lens_covered_or_extremely_dark", "camera_frozen", or empty/undefined
+//     const alertType = payload.alert ? String(payload.alert).trim() : "";
+
+//     let fill = "#60a5fa"; // default blue-ish
+//     let radius = 3;
+
+//     if (alertType === "lens_covered_or_extremely_dark") {
+//       // camera covered / extremely dark -> violet dot
+//       fill = LENS_ALERT;
+//       radius = 5;
+//     } else if (alertType === "camera_frozen") {
+//       // camera frozen -> orange dot
+//       fill = FREEZE_ALERT;
+//       radius = 5;
+//     } else if (thresholdsActive) {
+//       // fallback to threshold-based coloring if no explicit alert
+//       if (value > parsedMax) fill = RED; // alert
+//       else if (value >= parsedMin && value <= parsedMax) fill = GREEN; // safe
+//       else fill = AMBER; // below min
+//     }
+
+//     return (
+//       <circle
+//         cx={cx}
+//         cy={cy}
+//         r={radius}
+//         fill={fill}
+//         stroke={BG}
+//         strokeWidth={1}
+//       />
+//     );
+//   };
+
+
+//   // ---------- Filter helpers ----------
+
+//   // Day-wise filter: single date
+//   const applyDateFilter = (date, recordsSrc, perSecondSrc, frameSrc) => {
+//     if (!date) {
+//       setGraphData(recordsSrc);
+//       setPerSecondData(perSecondSrc);
+//       setFrameSeries(frameSrc);
+//       return;
+//     }
+
+//     const filteredRecords = recordsSrc.filter((r) => r.date === date);
+//     const filteredPerSecond = perSecondSrc.filter((r) => r.date === date);
+//     const filteredFrame = frameSrc.filter((r) => r.date === date);
+
+//     setGraphData(filteredRecords);
+//     setPerSecondData(filteredPerSecond);
+//     setFrameSeries(filteredFrame);
+//   };
+
+//   // Month-wise filter: aggregate per date inside selected month
+//   const applyMonthFilter = (monthKey, recordsSrc) => {
+//     if (!monthKey) {
+//       setMonthDailyData([]);
+//       return;
+//     }
+
+//     // recordsSrc has { date, timestamp, count }
+//     const monthRecords = recordsSrc.filter(
+//       (r) => r.date && r.date.startsWith(monthKey)
+//     );
+
+//     const dayMap = {};
+
+//     monthRecords.forEach((r) => {
+//       const d = r.date; // "YYYY-MM-DD"
+//       if (!dayMap[d]) {
+//         dayMap[d] = {
+//           date: d,
+//           dayLabel: d.slice(8, 10),
+//           total: 0,
+//           max: -Infinity,
+//           n: 0,
+//         };
+//       }
+//       dayMap[d].total += r.count;
+//       dayMap[d].max = Math.max(dayMap[d].max, r.count);
+//       dayMap[d].n += 1;
+//     });
+
+//     const dailyArr = Object.values(dayMap)
+//       .map((d) => ({
+//         date: d.date,
+//         day: d.dayLabel,
+//         avg_count: d.total / d.n,
+//         max_count: d.max,
+//         total_count: d.total,
+//       }))
+//       .sort((a, b) => a.date.localeCompare(b.date));
+
+//     setMonthDailyData(dailyArr);
+//   };
+
+
+//   // Year-wise filter: aggregate per month inside selected year
+//   const applyYearFilter = (yearKey, recordsSrc) => {
+//     if (!yearKey) {
+//       setYearMonthlyData([]);
+//       return;
+//     }
+
+//     // recordsSrc has { date, timestamp, count }
+//     const yearRecords = recordsSrc.filter(
+//       (r) => r.date && r.date.startsWith(yearKey)
+//     );
+
+//     const monthMap = {};
+//     yearRecords.forEach((r) => {
+//       // monthKey = "YYYY-MM"
+//       const monthKey = r.date.slice(0, 7);
+//       const shortMonth = monthKey.slice(5, 7); // "01", "02", ...
+
+//       if (!monthMap[monthKey]) {
+//         monthMap[monthKey] = {
+//           month: shortMonth, // for x-axis
+//           monthLabel: monthKey, // full "YYYY-MM"
+//           total: 0,
+//           max: -Infinity,
+//           n: 0,
+//         };
+//       }
+//       monthMap[monthKey].total += r.count;
+//       monthMap[monthKey].max = Math.max(monthMap[monthKey].max, r.count);
+//       monthMap[monthKey].n += 1;
+//     });
+
+//     const monthlyArr = Object.values(monthMap)
+//       .map((m) => ({
+//         month: m.month,
+//         monthLabel: m.monthLabel,
+//         avg_count: m.total / m.n,
+//         max_count: m.max,
+//         total_count: m.total,
+//       }))
+//       .sort((a, b) => a.monthLabel.localeCompare(b.monthLabel));
+
+//     setYearMonthlyData(monthlyArr);
+//   };
+
+
+//   // ---------- Upload handler ----------
+
+//   const handleCSVUpload = async () => {
+//     if (!csvFile) {
+//       alert("Please select a CSV file first!");
+//       return;
+//     }
+
+//     const formData = new FormData();
+//     formData.append("file", csvFile);
+
+//     setLoading(true);
+
+//     try {
+//       // const res = await fetch("http://127.0.0.1:8000/upload-csv", {
+//       //   method: "POST",
+//       //   body: formData,
+//       // });
+//       const res = await fetch("http://127.0.0.1:8000/dashboard/upload-csv", {
+//         method: "POST",
+//         body: formData,
+//       });
+
+
+//       const data = await res.json();
+
+//       if (data.status === "error") {
+//         alert(data.message || "Error processing CSV");
+//         setLoading(false);
+//         return;
+//       }
+
+//       const records = data.records || [];
+//       const perSecondAll = data.per_second || [];
+//       const frameAll = data.frame_series || [];
+//       const summaryObj = data.summary || null;
+
+//       // store raw (unfiltered)
+//       setRawGraphData(records);
+//       setRawPerSecondData(perSecondAll);
+//       setRawFrameSeries(frameAll);
+
+//       // collect unique dates from records
+//       const uniqueDates = Array.from(
+//         new Set(records.map((r) => r.date).filter(Boolean))
+//       );
+//       setAvailableDates(uniqueDates);
+//       const initialDate = uniqueDates[0] || "";
+//       setSelectedDate(initialDate);
+
+//       // collect unique months from records (YYYY-MM)
+//       const uniqueMonths = Array.from(
+//         new Set(
+//           records
+//             .map((r) => (r.date ? r.date.slice(0, 7) : null))
+//             .filter(Boolean)
+//         )
+//       );
+//       const uniqueYears = Array.from(
+//         new Set(
+//           records
+//             .map((r) => (r.date ? r.date.slice(0, 4) : null))
+//             .filter(Boolean)
+//         )
+//       );
+//       uniqueYears.sort();
+//       setAvailableYears(uniqueYears);
+
+//       const initialYear = uniqueYears[0] || "";
+//       setSelectedYear(initialYear);
+//       uniqueMonths.sort();
+//       setAvailableMonths(uniqueMonths);
+//       const initialMonth = uniqueMonths[0] || "";
+//       setSelectedMonth(initialMonth);
+
+
+
+
+//       // default to day view
+//       setViewMode("day");
+
+//       // apply initial day filter
+//       applyDateFilter(initialDate, records, perSecondAll, frameAll);
+
+//       // compute month aggregation for initial month (for when user switches view)
+//       applyMonthFilter(initialMonth, records);
+
+//       applyYearFilter(initialYear, records);
+
+//       setSummary(summaryObj);
+
+//       // ---- History entry ----
+//       const minVal =
+//         summaryObj && typeof summaryObj.min_count !== "undefined"
+//           ? summaryObj.min_count
+//           : "—";
+
+//       const maxVal =
+//         summaryObj && typeof summaryObj.max_count !== "undefined"
+//           ? summaryObj.max_count
+//           : "—";
+
+//       const newHistoryItem = {
+//         name: csvFile.name,
+//         uploadedAt: new Date().toLocaleString(),
+//         points: records.length,
+//         minCount: minVal,
+//         maxCount: maxVal,
+//       };
+
+//       setHistory((prev) => [newHistoryItem, ...prev]);
+//       setSelectedHistory(newHistoryItem);
+//     } catch (err) {
+//       console.error("Error:", err);
+//       alert("Failed to upload CSV");
+//     }
+
+//     setLoading(false);
+//   };
+
+
+//   const resetView = () => {
+//     setCsvFile(null);
+//     setGraphData([]);
+//     setPerSecondData([]);
+//     setFrameSeries([]);
+//     setSummary(null);
+//     setMinThreshold("");
+//     setMaxThreshold("");
+//     setShowTimeDetails(false);
+//     setShowPerSecondDetails(false);
+//     setShowFrameDetails(false);
+
+//     setRawGraphData([]);
+//     setRawPerSecondData([]);
+//     setRawFrameSeries([]);
+//     setAvailableDates([]);
+//     setSelectedDate("");
+//     setAvailableMonths([]);
+//     setSelectedMonth("");
+//     setMonthDailyData([]);
+//     setViewMode("day");
+//     setTimeout(() => {
+//       window.location.reload();
+//     }, 150);
+//   };
+
+//   // ---------- helpers for detail panels ----------
+
+//   const getTimeAlerts = () =>
+//     thresholdsActive ? graphData.filter((p) => p.count > parsedMax) : [];
+
+//   const getTimeSafe = () =>
+//     thresholdsActive
+//       ? graphData.filter(
+//         (p) => p.count >= parsedMin && p.count <= parsedMax
+//       )
+//       : [];
+
+//   const getPerSecondAlerts = () =>
+//     thresholdsActive
+//       ? perSecondData.filter((p) => p.avg_count > parsedMax)
+//       : [];
+
+//   const getPerSecondSafe = () =>
+//     thresholdsActive
+//       ? perSecondData.filter(
+//         (p) => p.avg_count >= parsedMin && p.avg_count <= parsedMax
+//       )
+//       : [];
+
+//   const getFrameAlerts = () =>
+//     thresholdsActive ? frameSeries.filter((p) => p.count > parsedMax) : [];
+
+//   const getFrameSafe = () =>
+//     thresholdsActive
+//       ? frameSeries.filter(
+//         (p) => p.count >= parsedMin && p.count <= parsedMax
+//       )
+//       : [];
+
+
+//   // ---------- Month-wise detail helpers (use monthDailyData) ----------
+//   const getMonthAlertDays = () =>
+//     thresholdsActive
+//       ? monthDailyData.filter((d) => d.max_count > parsedMax)
+//       : [];
+
+//   const getMonthSafeDays = () =>
+//     thresholdsActive
+//       ? monthDailyData.filter(
+//         (d) => d.avg_count >= parsedMin && d.avg_count <= parsedMax
+//       )
+//       : [];
+
+//   // ---------- Year-wise detail helpers (use yearMonthlyData) ----------
+//   const getYearAlertMonths = () =>
+//     thresholdsActive
+//       ? yearMonthlyData.filter((m) => m.max_count > parsedMax)
+//       : [];
+
+//   const getYearSafeMonths = () =>
+//     thresholdsActive
+//       ? yearMonthlyData.filter(
+//         (m) => m.avg_count >= parsedMin && m.avg_count <= parsedMax
+//       )
+//       : [];
+
+
+
+
+//   return (
+//     <>
+//       <div style={styles.page}>
+//         <div style={styles.content}>
+//           {/* TOP BAR */}
+//           <div style={styles.topBar}>
+//             <button style={styles.backBtn} onClick={() => navigate(-1)}>
+//               ← Back
+//             </button>
+
+//             <div style={styles.brandBlock}>
+//               <div style={styles.brand}>VigilNet Dashboard</div>
+//               <div style={styles.header}>Historical Crowd Analytics</div>
+//               <div style={styles.subtitle}>
+//                 Upload model outputs as CSV and explore time-based crowd trends
+//                 for research, debugging, and reporting.
+//               </div>
+//             </div>
+//           </div>
+
+//           {/* THEORY CARD */}
+//           <div style={styles.theoryCard}>
+//             <div style={styles.theoryTitle}>Why this dashboard matters</div>
+//             <div style={styles.theoryHeading}>
+//               From raw CSV logs to decisions you can defend
+//             </div>
+//             <p style={styles.theoryText}>
+//               VigilNet’s historical dashboard turns date + timestamp + count
+//               logs into a visual narrative. You can zoom into a single day or
+//               step back to see how whole months behave, spotting spikes, quiet
+//               days, and recurring patterns.
+//             </p>
+//             <ul style={styles.theoryList}>
+//               <li>
+//                 <strong>Day-wise:</strong> inspect how counts evolve within a
+//                 day (timestamp-wise, per-second, per-frame).
+//               </li>
+//               <li>
+//                 <strong>Month-wise:</strong> summarise how each day in a month
+//                 behaves using average, peak, and total crowd counts.
+//               </li>
+//             </ul>
+//           </div>
+
+//           {/* MAIN ROW */}
+//           <div style={styles.mainRow}>
+//             {/* LEFT COLUMN: HISTORY */}
+//             <div style={styles.leftCol}>
+//               <div style={styles.historyCard}>
+//                 <div style={styles.historyTitle}>Upload history</div>
+//                 <div style={styles.historySub}>
+//                   Recent CSV files processed on this dashboard.
+//                 </div>
+
+//                 {history.length === 0 ? (
+//                   <div style={styles.historyEmpty}>
+//                     No files analyzed yet. Upload a CSV to start building your
+//                     history.
+//                   </div>
+//                 ) : (
+//                   <>
+//                     <ul style={styles.historyList}>
+//                       {history.map((item, idx) => (
+//                         <li
+//                           key={idx}
+//                           style={{
+//                             ...styles.historyItem,
+//                             cursor: "pointer",
+//                             backgroundColor:
+//                               selectedHistory === item
+//                                 ? "rgba(15,23,42,0.8)"
+//                                 : "transparent",
+//                           }}
+//                           onClick={() => setSelectedHistory(item)}
+//                         >
+//                           <div style={styles.historyName}>{item.name}</div>
+//                           <div style={styles.historyMeta}>
+//                             {item.points} points · {item.uploadedAt}
+//                           </div>
+//                         </li>
+//                       ))}
+//                     </ul>
+
+//                     {selectedHistory && (
+//                       <div
+//                         style={{
+//                           marginTop: 10,
+//                           paddingTop: 8,
+//                           borderTop: "1px solid rgba(15,23,42,0.9)",
+//                           fontSize: 12,
+//                           color: "#9ca3af",
+//                         }}
+//                       >
+//                         <div>
+//                           Min count:{" "}
+//                           {selectedHistory.minCount?.toFixed
+//                             ? selectedHistory.minCount.toFixed(2)
+//                             : selectedHistory.minCount}
+//                         </div>
+//                         <div>
+//                           Max count:{" "}
+//                           {selectedHistory.maxCount?.toFixed
+//                             ? selectedHistory.maxCount.toFixed(2)
+//                             : selectedHistory.maxCount}
+//                         </div>
+//                         <div>Total points: {selectedHistory.points}</div>
+//                       </div>
+//                     )}
+//                   </>
+//                 )}
+//               </div>
+//             </div>
+
+//             {/* RIGHT COLUMN: UPLOAD + GRAPHS */}
+//             <div style={styles.rightCol}>
+//               {/* CSV Upload + Thresholds + View & Filters */}
+//               <div style={styles.graphBox}>
+//                 <div style={styles.graphTitle}>Upload CSV file</div>
+//                 <div style={styles.graphSubtitle}>
+//                   Expected format:&nbsp;
+//                   <code>date, timestamp_ns, frame_index, count</code>
+//                   <br />
+//                   Or<br />
+//                   <code>date, timestamp_ns, frame_index, count, alert</code>
+//                   <br /><br />
+
+//                   {/* Legend additions */}
+//                   <span style={{ color: "#a855f7", fontWeight: "bold" }}>●</span>
+//                   &nbsp;violet dot = lens_covered_or_extremely_dark
+//                   <br />
+
+//                   <span style={{ color: "#f97316", fontWeight: "bold" }}>●</span>
+//                   &nbsp;orange dot = camera_frozen
+//                 </div>
+
+
+
+
+//                 <input
+//                   type="file"
+//                   accept=".csv"
+//                   onChange={(e) => setCsvFile(e.target.files[0])}
+//                   style={styles.fileInput}
+//                 />
+
+//                 <div style={{ display: "flex", gap: 10, marginTop: 5 }}>
+//                   <button onClick={handleCSVUpload} style={styles.actionBtn}>
+//                     {loading ? "Processing..." : "Upload & Process"}
+//                   </button>
+
+//                   <button onClick={resetView} style={styles.resetBtn}>
+//                     Clear / Refresh
+//                   </button>
+//                 </div>
+
+//                 {csvFile && (
+//                   <div style={styles.selectedFile}>
+//                     Selected file: {csvFile.name}
+//                   </div>
+//                 )}
+
+//                 {/* Threshold controls */}
+//                 <div style={styles.thresholdRow}>
+//                   <span>Thresholds:</span>
+//                   <span>Min (safe start)</span>
+//                   <input
+//                     type="number"
+//                     step="0.01"
+//                     value={minThreshold}
+//                     onChange={(e) => setMinThreshold(e.target.value)}
+//                     style={styles.thresholdInput}
+//                     placeholder="e.g. 100"
+//                   />
+//                   <span>Max (alert)</span>
+//                   <input
+//                     type="number"
+//                     step="0.01"
+//                     value={maxThreshold}
+//                     onChange={(e) => setMaxThreshold(e.target.value)}
+//                     style={styles.thresholdInput}
+//                     placeholder="e.g. 150"
+//                   />
+//                 </div>
+
+//                 {/* View mode toggle */}
+//                 <div style={styles.viewToggleRow}>
+//                   <span>View mode:</span>
+//                   <button
+//                     style={{
+//                       ...styles.viewToggleBtn,
+//                       ...(viewMode === "day" ? styles.viewToggleBtnActive : {}),
+//                     }}
+//                     onClick={() => {
+//                       setViewMode("day");
+//                       applyDateFilter(
+//                         selectedDate,
+//                         rawGraphData,
+//                         rawPerSecondData,
+//                         rawFrameSeries
+//                       );
+//                     }}
+//                   >
+//                     Day-wise
+//                   </button>
+
+//                   <button
+//                     style={{
+//                       ...styles.viewToggleBtn,
+//                       ...(viewMode === "month" ? styles.viewToggleBtnActive : {}),
+//                     }}
+//                     onClick={() => {
+//                       setViewMode("month");
+//                       applyMonthFilter(selectedMonth, rawGraphData);
+//                     }}
+//                   >
+//                     Month-wise
+//                   </button>
+
+//                   <button
+//                     style={{
+//                       ...styles.viewToggleBtn,
+//                       ...(viewMode === "year" ? styles.viewToggleBtnActive : {}),
+//                     }}
+//                     onClick={() => {
+//                       setViewMode("year");
+//                       applyYearFilter(selectedYear, rawGraphData);
+//                     }}
+//                   >
+//                     Year-wise
+//                   </button>
+//                 </div>
+
+
+//                 {/* Day-wise vs Month-wise filters */}
+//                 {viewMode === "day" && availableDates.length > 0 && (
+//                   <div style={styles.thresholdRow}>
+//                     <span>Filter by date:</span>
+//                     <select
+//                       value={selectedDate}
+//                       onChange={(e) => {
+//                         const value = e.target.value;
+//                         setSelectedDate(value);
+//                         applyDateFilter(
+//                           value,
+//                           rawGraphData,
+//                           rawPerSecondData,
+//                           rawFrameSeries
+//                         );
+//                       }}
+//                       style={styles.dateSelect}
+//                     >
+//                       <option value="">All dates</option>
+//                       {availableDates.map((d) => (
+//                         <option key={d} value={d}>
+//                           {d}
+//                         </option>
+//                       ))}
+//                     </select>
+//                     <button
+//                       style={styles.filterBtn}
+//                       onClick={() =>
+//                         applyDateFilter(
+//                           selectedDate,
+//                           rawGraphData,
+//                           rawPerSecondData,
+//                           rawFrameSeries
+//                         )
+//                       }
+//                     >
+//                       FILTER
+//                     </button>
+//                   </div>
+//                 )}
+
+//                 {viewMode === "month" && availableMonths.length > 0 && (
+//                   <div style={styles.thresholdRow}>
+//                     <span>Filter by month:</span>
+//                     <select
+//                       value={selectedMonth}
+//                       onChange={(e) => {
+//                         const value = e.target.value;
+//                         setSelectedMonth(value);
+//                         applyMonthFilter(value, rawGraphData);
+//                       }}
+//                       style={styles.dateSelect}
+//                     >
+//                       <option value="">All months</option>
+//                       {availableMonths.map((m) => (
+//                         <option key={m} value={m}>
+//                           {m}
+//                         </option>
+//                       ))}
+//                     </select>
+//                     <button
+//                       style={styles.filterBtn}
+//                       onClick={() =>
+//                         applyMonthFilter(selectedMonth, rawGraphData)
+//                       }
+//                     >
+//                       FILTER
+//                     </button>
+//                   </div>
+//                 )}
+
+//                 {viewMode === "year" && availableYears.length > 0 && (
+//                   <div style={styles.thresholdRow}>
+//                     <span>Filter by year:</span>
+//                     <select
+//                       value={selectedYear}
+//                       onChange={(e) => {
+//                         const value = e.target.value;
+//                         setSelectedYear(value);
+//                         applyYearFilter(value, rawGraphData);
+//                       }}
+//                       style={styles.dateSelect}
+//                     >
+//                       <option value="">All years</option>
+//                       {availableYears.map((y) => (
+//                         <option key={y} value={y}>
+//                           {y}
+//                         </option>
+//                       ))}
+//                     </select>
+//                     <button
+//                       style={styles.filterBtn}
+//                       onClick={() => applyYearFilter(selectedYear, rawGraphData)}
+//                     >
+//                       FILTER
+//                     </button>
+//                   </div>
+//                 )}
+
+
+//                 {summary && (
+//                   <div style={styles.summaryRow}>
+//                     <span style={styles.summaryChip}>
+//                       Min count: {summary.min_count.toFixed(2)}
+//                     </span>
+//                     <span style={styles.summaryChip}>
+//                       Max count: {summary.max_count.toFixed(2)}
+//                     </span>
+//                     <span style={styles.summaryChip}>
+//                       Mean count: {summary.mean_count.toFixed(2)}
+//                     </span>
+//                     <span style={styles.summaryChip}>
+//                       Points: {summary.num_points}
+//                     </span>
+//                   </div>
+//                 )}
+//               </div>
+
+              // {/* ==== GRAPHS SECTION ==== */}
+
+              // {viewMode === "day" ? (
+              //   <>
+              //     {/* DAY-WISE: GRAPH 1 */}
+              //     <div style={styles.graphBox}>
+              //       <div style={styles.graphTitle}>
+              //         Crowd trends (time-series, per day)
+              //       </div>
+              //       <div style={styles.graphSubtitle}>
+              //         time_sec vs count – green = within safe range, red = above
+              //         alert threshold.
+              //       </div>
+
+              //       <button
+              //         style={styles.detailBtn}
+              //         onClick={() => setShowTimeDetails((prev) => !prev)}
+              //       >
+              //         {showTimeDetails ? "Hide details" : "Show details"}
+              //       </button>
+
+              //       <div style={styles.graphArea}>
+              //         {graphData.length === 0 ? (
+              //           <div style={styles.graphPlaceholder}>
+              //             Upload a CSV file and pick a date to render the
+              //             time–series chart.
+              //           </div>
+              //         ) : (
+              //           <ResponsiveContainer width="100%" height="100%">
+              //             <LineChart data={graphData}>
+              //               <XAxis
+              //                 dataKey="timestamp"
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Time (sec)",
+              //                   position: "insideBottom",
+              //                   offset: -4,
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <YAxis
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Count",
+              //                   angle: -90,
+              //                   position: "insideLeft",
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <Tooltip
+              //                 contentStyle={{
+              //                   backgroundColor: "#020617",
+              //                   border: "1px solid #1e293b",
+              //                   borderRadius: 8,
+              //                   fontSize: 11,
+              //                 }}
+              //                 labelStyle={{ color: "#e5e7eb" }}
+              //               />
+              //               {thresholdsActive && (
+              //                 <>
+              //                   <ReferenceLine
+              //                     y={parsedMin}
+              //                     stroke={GREEN}
+              //                     strokeDasharray="3 3"
+              //                     label={{
+              //                       value: "Min safe",
+              //                       fill: GREEN,
+              //                       fontSize: 10,
+              //                     }}
+              //                   />
+              //                   <ReferenceLine
+              //                     y={parsedMax}
+              //                     stroke={RED}
+              //                     strokeDasharray="3 3"
+              //                     label={{
+              //                       value: "Max alert",
+              //                       fill: RED,
+              //                       fontSize: 10,
+              //                     }}
+              //                   />
+              //                 </>
+              //               )}
+              //               <Line
+              //                 type="monotone"
+              //                 dataKey="count"
+              //                 stroke={BLUE}
+              //                 strokeWidth={2}
+              //                 dot={(props) => renderColoredDot(props)}
+              //                 activeDot={{ r: 5 }}
+              //               />
+              //             </LineChart>
+              //           </ResponsiveContainer>
+              //         )}
+              //       </div>
+
+              //       {showTimeDetails && thresholdsActive && (
+              //         <div style={styles.detailPanel}>
+              //           <div style={styles.detailSectionTitle}>
+              //             Alert points (count &gt; max)
+              //           </div>
+              //           {getTimeAlerts().length === 0 ? (
+              //             <div>No alert points.</div>
+              //           ) : (
+              //             getTimeAlerts().map((p, idx) => (
+              //               <div key={`ta-${idx}`}>
+              //                 date = {p.date}, t = {p.timestamp}, count ={" "}
+              //                 {p.count.toFixed(3)}
+              //               </div>
+              //             ))
+              //           )}
+              //           <div style={styles.detailSectionTitle}>
+              //             Safe points (between min &amp; max)
+              //           </div>
+              //           {getTimeSafe().length === 0 ? (
+              //             <div>No safe points based on current thresholds.</div>
+              //           ) : (
+              //             getTimeSafe().map((p, idx) => (
+              //               <div key={`ts-${idx}`}>
+              //                 date = {p.date}, t = {p.timestamp}, count ={" "}
+              //                 {p.count.toFixed(3)}
+              //               </div>
+              //             ))
+              //           )}
+              //         </div>
+              //       )}
+              //     </div>
+
+              //     {/* DAY-WISE: GRAPH 2 */}
+              //     <div style={styles.graphBox}>
+              //       <div style={styles.graphTitle}>
+              //         Per-second average crowd level (selected day)
+              //       </div>
+              //       <div style={styles.graphSubtitle}>
+              //         Bars show average count per whole second – green safe, red
+              //         alert.
+              //       </div>
+
+              //       <button
+              //         style={styles.detailBtn}
+              //         onClick={() =>
+              //           setShowPerSecondDetails((prev) => !prev)
+              //         }
+              //       >
+              //         {showPerSecondDetails ? "Hide details" : "Show details"}
+              //       </button>
+
+              //       <div style={styles.graphArea}>
+              //         {perSecondData.length === 0 ? (
+              //           <div style={styles.graphPlaceholder}>
+              //             Upload a CSV and select a date to see per-second
+              //             averages.
+              //           </div>
+              //         ) : (
+              //           <ResponsiveContainer width="100%" height="100%">
+              //             <BarChart data={perSecondData}>
+              //               <CartesianGrid strokeDasharray="3 3" />
+              //               <XAxis
+              //                 dataKey="second"
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Second",
+              //                   position: "insideBottom",
+              //                   offset: -4,
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <YAxis
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Avg Count",
+              //                   angle: -90,
+              //                   position: "insideLeft",
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <Tooltip
+              //                 contentStyle={{
+              //                   backgroundColor: "#020617",
+              //                   border: "1px solid #1e293b",
+              //                   borderRadius: 8,
+              //                   fontSize: 11,
+              //                 }}
+              //                 labelStyle={{ color: "#e5e7eb" }}
+              //               />
+              //               <Legend />
+              //               <Bar dataKey="avg_count" name="Avg count">
+              //                 {perSecondData.map((entry, index) => {
+              //                   const v = entry.avg_count;
+              //                   let fillColor = "#60a5fa";
+              //                   if (thresholdsActive) {
+              //                     if (v > parsedMax) fillColor = RED;
+              //                     else if (
+              //                       v >= parsedMin &&
+              //                       v <= parsedMax
+              //                     )
+              //                       fillColor = GREEN;
+              //                     else fillColor = AMBER;
+              //                   }
+              //                   return (
+              //                     <Cell
+              //                       key={`cell-${index}`}
+              //                       fill={fillColor}
+              //                     />
+              //                   );
+              //                 })}
+              //               </Bar>
+              //               {thresholdsActive && (
+              //                 <>
+              //                   <ReferenceLine
+              //                     y={parsedMin}
+              //                     stroke={GREEN}
+              //                     strokeDasharray="3 3"
+              //                   />
+              //                   <ReferenceLine
+              //                     y={parsedMax}
+              //                     stroke={RED}
+              //                     strokeDasharray="3 3"
+              //                   />
+              //                 </>
+              //               )}
+              //             </BarChart>
+              //           </ResponsiveContainer>
+              //         )}
+              //       </div>
+
+              //       {showPerSecondDetails && thresholdsActive && (
+              //         <div style={styles.detailPanel}>
+              //           <div style={styles.detailSectionTitle}>
+              //             Alert seconds (avg &gt; max)
+              //           </div>
+              //           {getPerSecondAlerts().length === 0 ? (
+              //             <div>No alert seconds.</div>
+              //           ) : (
+              //             getPerSecondAlerts().map((p, idx) => (
+              //               <div key={`pa-${idx}`}>
+              //                 date = {p.date}, second = {p.second}, avg ={" "}
+              //                 {p.avg_count.toFixed(3)}
+              //               </div>
+              //             ))
+              //           )}
+              //           <div style={styles.detailSectionTitle}>
+              //             Safe seconds (between min &amp; max)
+              //           </div>
+              //           {getPerSecondSafe().length === 0 ? (
+              //             <div>
+              //               No safe seconds for current thresholds.
+              //             </div>
+              //           ) : (
+              //             getPerSecondSafe().map((p, idx) => (
+              //               <div key={`ps-${idx}`}>
+              //                 date = {p.date}, second = {p.second}, avg ={" "}
+              //                 {p.avg_count.toFixed(3)}
+              //               </div>
+              //             ))
+              //           )}
+              //         </div>
+              //       )}
+              //     </div>
+
+              //     {/* DAY-WISE: GRAPH 3 */}
+              //     <div style={styles.graphBox}>
+              //       <div style={styles.graphTitle}>
+              //         Frame index vs crowd count (selected day)
+              //       </div>
+              //       <div style={styles.graphSubtitle}>
+              //         Helps you inspect how the model behaves frame by frame for
+              //         the chosen day.
+              //       </div>
+
+              //       <button
+              //         style={styles.detailBtn}
+              //         onClick={() => setShowFrameDetails((prev) => !prev)}
+              //       >
+              //         {showFrameDetails ? "Hide details" : "Show details"}
+              //       </button>
+
+              //       <div style={styles.graphArea}>
+              //         {frameSeries.length === 0 ? (
+              //           <div style={styles.graphPlaceholder}>
+              //             Upload a CSV and select a date to see frame-based
+              //             trend.
+              //           </div>
+              //         ) : (
+              //           <ResponsiveContainer width="100%" height="100%">
+              //             <LineChart data={frameSeries}>
+              //               <XAxis
+              //                 dataKey="frame_index"
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Frame index",
+              //                   position: "insideBottom",
+              //                   offset: -4,
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <YAxis
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Count",
+              //                   angle: -90,
+              //                   position: "insideLeft",
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <Tooltip
+              //                 contentStyle={{
+              //                   backgroundColor: "#020617",
+              //                   border: "1px solid #1e293b",
+              //                   borderRadius: 8,
+              //                   fontSize: 11,
+              //                 }}
+              //                 labelStyle={{ color: "#e5e7eb" }}
+              //               />
+              //               {thresholdsActive && (
+              //                 <>
+              //                   <ReferenceLine
+              //                     y={parsedMin}
+              //                     stroke={GREEN}
+              //                     strokeDasharray="3 3"
+              //                   />
+              //                   <ReferenceLine
+              //                     y={parsedMax}
+              //                     stroke={RED}
+              //                     strokeDasharray="3 3"
+              //                   />
+              //                 </>
+              //               )}
+              //               <Line
+              //                 type="monotone"
+              //                 dataKey="count"
+              //                 stroke={CYAN}
+              //                 strokeWidth={2}
+              //                 dot={(props) => renderColoredDot(props)}
+              //                 activeDot={{ r: 5 }}
+              //               />
+              //             </LineChart>
+              //           </ResponsiveContainer>
+              //         )}
+              //       </div>
+
+              //       {showFrameDetails && thresholdsActive && (
+              //         <div style={styles.detailPanel}>
+              //           <div style={styles.detailSectionTitle}>
+              //             Alert frames (count &gt; max)
+              //           </div>
+              //           {getFrameAlerts().length === 0 ? (
+              //             <div>No alert frames.</div>
+              //           ) : (
+              //             getFrameAlerts().map((p, idx) => (
+              //               <div key={`fa-${idx}`}>
+              //                 date = {p.date}, frame = {p.frame_index}, count ={" "}
+              //                 {p.count.toFixed(3)}
+              //               </div>
+              //             ))
+              //           )}
+              //           <div style={styles.detailSectionTitle}>
+              //             Safe frames (between min &amp; max)
+              //           </div>
+              //           {getFrameSafe().length === 0 ? (
+              //             <div>No safe frames for current thresholds.</div>
+              //           ) : (
+              //             getFrameSafe().map((p, idx) => (
+              //               <div key={`fs-${idx}`}>
+              //                 date = {p.date}, frame = {p.frame_index}, count ={" "}
+              //                 {p.count.toFixed(3)}
+              //               </div>
+              //             ))
+              //           )}
+              //         </div>
+              //       )}
+              //     </div>
+              //   </>
+              // ) : viewMode === "month" ? (
+              //   <>
+              //     {/* MONTH-WISE: GRAPH 1 - Day vs avg count */}
+              //     {/* MONTH-WISE: GRAPH 1 - Day vs avg_count */}
+              //     <div style={styles.graphBox}>
+              //       <div style={styles.graphTitle}>
+              //         Month overview: average crowd per day
+              //       </div>
+              //       <div style={styles.graphSubtitle}>
+              //         Each point = one day. Useful for spotting consistently
+              //         busy or calm days in the selected month.
+              //       </div>
+
+              //       {/* NEW: details toggle button */}
+              //       <button
+              //         style={styles.detailBtn}
+              //         onClick={() => setShowMonthDetails((prev) => !prev)}
+              //       >
+              //         {showMonthDetails ? "Hide details" : "Show details"}
+              //       </button>
+
+              //       <div style={styles.graphArea}>
+              //         {monthDailyData.length === 0 ? (
+              //           <div style={styles.graphPlaceholder}>
+              //             Upload a CSV and pick a month to see day-wise
+              //             averages.
+              //           </div>
+              //         ) : (
+              //           <ResponsiveContainer width="100%" height="100%">
+              //             <LineChart data={monthDailyData}>
+              //               <XAxis
+              //                 dataKey="day"
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Day of month",
+              //                   position: "insideBottom",
+              //                   offset: -4,
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <YAxis
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Average count",
+              //                   angle: -90,
+              //                   position: "insideLeft",
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <Tooltip
+              //                 contentStyle={{
+              //                   backgroundColor: "#020617",
+              //                   border: "1px solid #1e293b",
+              //                   borderRadius: 8,
+              //                   fontSize: 11,
+              //                 }}
+              //                 labelStyle={{ color: "#e5e7eb" }}
+              //               />
+              //               <Line
+              //                 type="monotone"
+              //                 dataKey="avg_count"
+              //                 stroke={BLUE}
+              //                 strokeWidth={2}
+              //                 dot={{ r: 3 }}
+              //                 activeDot={{ r: 4 }}
+              //               />
+              //             </LineChart>
+              //           </ResponsiveContainer>
+              //         )}
+              //       </div>
+
+              //       {/* NEW: month details panel */}
+              //       {showMonthDetails && thresholdsActive && (
+              //         <div style={styles.detailPanel}>
+              //           <div style={styles.detailSectionTitle}>
+              //             Alert days (max &gt; max threshold)
+              //           </div>
+              //           {getMonthAlertDays().length === 0 ? (
+              //             <div>No alert days.</div>
+              //           ) : (
+              //             getMonthAlertDays().map((d, idx) => (
+              //               <div key={`md-alert-${idx}`}>
+              //                 day = {d.day}, avg = {d.avg_count.toFixed(2)}, max ={" "}
+              //                 {d.max_count.toFixed(2)}, total = {d.total_count.toFixed(2)}
+              //               </div>
+              //             ))
+              //           )}
+
+              //           <div style={styles.detailSectionTitle}>
+              //             Safe days (avg between min &amp; max)
+              //           </div>
+              //           {getMonthSafeDays().length === 0 ? (
+              //             <div>No safe days for current thresholds.</div>
+              //           ) : (
+              //             getMonthSafeDays().map((d, idx) => (
+              //               <div key={`md-safe-${idx}`}>
+              //                 day = {d.day}, avg = {d.avg_count.toFixed(2)}, max ={" "}
+              //                 {d.max_count.toFixed(2)}, total = {d.total_count.toFixed(2)}
+              //               </div>
+              //             ))
+              //           )}
+              //         </div>
+              //       )}
+              //     </div>
+
+
+              //     {/* MONTH-WISE: GRAPH 2 - Day vs max count */}
+              //     <div style={styles.graphBox}>
+              //       <div style={styles.graphTitle}>
+              //         Month overview: peak crowd per day
+              //       </div>
+              //       <div style={styles.graphSubtitle}>
+              //         Shows the highest count observed on each day of the
+              //         selected month.
+              //       </div>
+
+              //       {/* NEW: details toggle */}
+              //       <button
+              //         style={styles.detailBtn}
+              //         onClick={() => setShowMonthDetails2((prev) => !prev)}
+              //       >
+              //         {showMonthDetails2 ? "Hide details" : "Show details"}
+              //       </button>
+
+              //       <div style={styles.graphArea}>
+              //         {monthDailyData.length === 0 ? (
+              //           <div style={styles.graphPlaceholder}>
+              //             Upload a CSV and pick a month to see max counts per
+              //             day.
+              //           </div>
+              //         ) : (
+              //           <ResponsiveContainer width="100%" height="100%">
+              //             <BarChart data={monthDailyData}>
+              //               <CartesianGrid strokeDasharray="3 3" />
+              //               <XAxis
+              //                 dataKey="day"
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Day of month",
+              //                   position: "insideBottom",
+              //                   offset: -4,
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <YAxis
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Max count",
+              //                   angle: -90,
+              //                   position: "insideLeft",
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <Tooltip
+              //                 contentStyle={{
+              //                   backgroundColor: "#020617",
+              //                   border: "1px solid #1e293b",
+              //                   borderRadius: 8,
+              //                   fontSize: 11,
+              //                 }}
+              //                 labelStyle={{ color: "#e5e7eb" }}
+              //               />
+              //               <Legend />
+              //               <Bar dataKey="max_count" name="Max count">
+              //                 {monthDailyData.map((entry, index) => {
+              //                   const v = entry.max_count;
+              //                   let fillColor = "#60a5fa";
+              //                   if (thresholdsActive) {
+              //                     if (v > parsedMax) fillColor = RED;
+              //                     else if (
+              //                       v >= parsedMin &&
+              //                       v <= parsedMax
+              //                     )
+              //                       fillColor = GREEN;
+              //                     else fillColor = AMBER;
+              //                   }
+              //                   return (
+              //                     <Cell
+              //                       key={`mmax-${index}`}
+              //                       fill={fillColor}
+              //                     />
+              //                   );
+              //                 })}
+              //               </Bar>
+              //             </BarChart>
+              //           </ResponsiveContainer>
+              //         )}
+              //       </div>
+              //       {/* NEW: details panel */}
+              //       {showMonthDetails2 && thresholdsActive && (
+              //         <div style={styles.detailPanel}>
+              //           <div style={styles.detailSectionTitle}>
+              //             Alert days (max &gt; max threshold)
+              //           </div>
+              //           {getMonthAlertDays().length === 0 ? (
+              //             <div>No alert days.</div>
+              //           ) : (
+              //             getMonthAlertDays().map((d, idx) => (
+              //               <div key={`md2-alert-${idx}`}>
+              //                 day = {d.day}, max = {d.max_count.toFixed(2)}, avg ={" "}
+              //                 {d.avg_count.toFixed(2)}, total ={" "}
+              //                 {d.total_count.toFixed(2)}
+              //               </div>
+              //             ))
+              //           )}
+
+              //           <div style={styles.detailSectionTitle}>
+              //             Safe days (avg between min &amp; max)
+              //           </div>
+              //           {getMonthSafeDays().length === 0 ? (
+              //             <div>No safe days for current thresholds.</div>
+              //           ) : (
+              //             getMonthSafeDays().map((d, idx) => (
+              //               <div key={`md2-safe-${idx}`}>
+              //                 day = {d.day}, max = {d.max_count.toFixed(2)}, avg ={" "}
+              //                 {d.avg_count.toFixed(2)}, total ={" "}
+              //                 {d.total_count.toFixed(2)}
+              //               </div>
+              //             ))
+              //           )}
+              //         </div>
+              //       )}
+              //     </div>
+
+              //     {/* MONTH-WISE: GRAPH 3 - Day vs total count */}
+              //     <div style={styles.graphBox}>
+              //       <div style={styles.graphTitle}>
+              //         Month overview: total crowd signal per day
+              //       </div>
+              //       <div style={styles.graphSubtitle}>
+              //         Sum of all counts for each day – useful for load planning
+              //         and total crowd exposure.
+              //       </div>
+
+              //       {/* NEW: details toggle */}
+              //       <button
+              //         style={styles.detailBtn}
+              //         onClick={() => setShowMonthDetails3((prev) => !prev)}
+              //       >
+              //         {showMonthDetails3 ? "Hide details" : "Show details"}
+              //       </button>
+
+              //       <div style={styles.graphArea}>
+              //         {monthDailyData.length === 0 ? (
+              //           <div style={styles.graphPlaceholder}>
+              //             Upload a CSV and pick a month to see total signals per
+              //             day.
+              //           </div>
+              //         ) : (
+              //           <ResponsiveContainer width="100%" height="100%">
+              //             <LineChart data={monthDailyData}>
+              //               <XAxis
+              //                 dataKey="day"
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Day of month",
+              //                   position: "insideBottom",
+              //                   offset: -4,
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <YAxis
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Total count (sum)",
+              //                   angle: -90,
+              //                   position: "insideLeft",
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <Tooltip
+              //                 contentStyle={{
+              //                   backgroundColor: "#020617",
+              //                   border: "1px solid #1e293b",
+              //                   borderRadius: 8,
+              //                   fontSize: 11,
+              //                 }}
+              //                 labelStyle={{ color: "#e5e7eb" }}
+              //               />
+              //               <Line
+              //                 type="monotone"
+              //                 dataKey="total_count"
+              //                 stroke={CYAN}
+              //                 strokeWidth={2}
+              //                 dot={{ r: 3 }}
+              //                 activeDot={{ r: 4 }}
+              //               />
+              //             </LineChart>
+              //           </ResponsiveContainer>
+              //         )}
+              //       </div>
+
+              //       {/* NEW: details panel */}
+              //       {showMonthDetails3 && thresholdsActive && (
+              //         <div style={styles.detailPanel}>
+              //           <div style={styles.detailSectionTitle}>
+              //             Alert days (max &gt; max threshold)
+              //           </div>
+              //           {getMonthAlertDays().length === 0 ? (
+              //             <div>No alert days.</div>
+              //           ) : (
+              //             getMonthAlertDays().map((d, idx) => (
+              //               <div key={`md3-alert-${idx}`}>
+              //                 day = {d.day}, total = {d.total_count.toFixed(2)}, max ={" "}
+              //                 {d.max_count.toFixed(2)}, avg = {d.avg_count.toFixed(2)}
+              //               </div>
+              //             ))
+              //           )}
+
+              //           <div style={styles.detailSectionTitle}>
+              //             Safe days (avg between min &amp; max)
+              //           </div>
+              //           {getMonthSafeDays().length === 0 ? (
+              //             <div>No safe days for current thresholds.</div>
+              //           ) : (
+              //             getMonthSafeDays().map((d, idx) => (
+              //               <div key={`md3-safe-${idx}`}>
+              //                 day = {d.day}, total = {d.total_count.toFixed(2)}, max ={" "}
+              //                 {d.max_count.toFixed(2)}, avg = {d.avg_count.toFixed(2)}
+              //               </div>
+              //             ))
+              //           )}
+              //         </div>
+              //       )}
+              //     </div>
+              //   </>
+              // ) : (
+              //   <>
+              //     {/* YEAR-WISE: GRAPH 1 - Month vs avg_count */}
+              //     <div style={styles.graphBox}>
+              //       <div style={styles.graphTitle}>
+              //         Year overview: average crowd per month
+              //       </div>
+              //       <div style={styles.graphSubtitle}>
+              //         Each point = one month. Helps you compare how busy months are within the selected year.
+              //       </div>
+
+              //       {/* NEW: details toggle button */}
+              //       <button
+              //         style={styles.detailBtn}
+              //         onClick={() => setShowYearDetails((prev) => !prev)}
+              //       >
+              //         {showYearDetails ? "Hide details" : "Show details"}
+              //       </button>
+
+              //       <div style={styles.graphArea}>
+              //         {yearMonthlyData.length === 0 ? (
+              //           <div style={styles.graphPlaceholder}>
+              //             Upload a CSV and pick a year to see month-wise averages.
+              //           </div>
+              //         ) : (
+              //           <ResponsiveContainer width="100%" height="100%">
+              //             <LineChart data={yearMonthlyData}>
+              //               <XAxis
+              //                 dataKey="month"
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Month (1–12)",
+              //                   position: "insideBottom",
+              //                   offset: -4,
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <YAxis
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Average count",
+              //                   angle: -90,
+              //                   position: "insideLeft",
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <Tooltip
+              //                 contentStyle={{
+              //                   backgroundColor: "#020617",
+              //                   border: "1px solid #1e293b",
+              //                   borderRadius: 8,
+              //                   fontSize: 11,
+              //                 }}
+              //                 labelStyle={{ color: "#e5e7eb" }}
+              //               />
+              //               <Line
+              //                 type="monotone"
+              //                 dataKey="avg_count"
+              //                 stroke={BLUE}
+              //                 strokeWidth={2}
+              //                 dot={{ r: 3 }}
+              //                 activeDot={{ r: 4 }}
+              //               />
+              //             </LineChart>
+              //           </ResponsiveContainer>
+              //         )}
+              //       </div>
+
+              //       {/* NEW: year details panel */}
+              //       {showYearDetails && thresholdsActive && (
+              //         <div style={styles.detailPanel}>
+              //           <div style={styles.detailSectionTitle}>
+              //             Alert months (max &gt; max threshold)
+              //           </div>
+              //           {getYearAlertMonths().length === 0 ? (
+              //             <div>No alert months.</div>
+              //           ) : (
+              //             getYearAlertMonths().map((m, idx) => (
+              //               <div key={`ym-alert-${idx}`}>
+              //                 month = {m.monthLabel}, avg = {m.avg_count.toFixed(2)}, max ={" "}
+              //                 {m.max_count.toFixed(2)}, total = {m.total_count.toFixed(2)}
+              //               </div>
+              //             ))
+              //           )}
+
+              //           <div style={styles.detailSectionTitle}>
+              //             Safe months (avg between min &amp; max)
+              //           </div>
+              //           {getYearSafeMonths().length === 0 ? (
+              //             <div>No safe months for current thresholds.</div>
+              //           ) : (
+              //             getYearSafeMonths().map((m, idx) => (
+              //               <div key={`ym-safe-${idx}`}>
+              //                 month = {m.monthLabel}, avg = {m.avg_count.toFixed(2)}, max ={" "}
+              //                 {m.max_count.toFixed(2)}, total = {m.total_count.toFixed(2)}
+              //               </div>
+              //             ))
+              //           )}
+              //         </div>
+              //       )}
+              //     </div>
+
+
+              //     {/* YEAR-WISE: GRAPH 2 - Month vs max_count */}
+              //     <div style={styles.graphBox}>
+              //       <div style={styles.graphTitle}>
+              //         Year overview: peak crowd per month
+              //       </div>
+              //       <div style={styles.graphSubtitle}>
+              //         Shows the highest count observed in each month of the selected year.
+              //       </div>
+
+              //       {/* NEW: details toggle */}
+              //       <button
+              //         style={styles.detailBtn}
+              //         onClick={() => setShowYearDetails2((prev) => !prev)}
+              //       >
+              //         {showYearDetails2 ? "Hide details" : "Show details"}
+              //       </button>
+
+              //       <div style={styles.graphArea}>
+              //         {yearMonthlyData.length === 0 ? (
+              //           <div style={styles.graphPlaceholder}>
+              //             Upload a CSV and pick a year to see monthly max crowd.
+              //           </div>
+              //         ) : (
+              //           <ResponsiveContainer width="100%" height="100%">
+              //             <BarChart data={yearMonthlyData}>
+              //               <CartesianGrid strokeDasharray="3 3" />
+              //               <XAxis
+              //                 dataKey="month"
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Month (1–12)",
+              //                   position: "insideBottom",
+              //                   offset: -4,
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <YAxis
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Max count",
+              //                   angle: -90,
+              //                   position: "insideLeft",
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <Tooltip
+              //                 contentStyle={{
+              //                   backgroundColor: "#020617",
+              //                   border: "1px solid #1e293b",
+              //                   borderRadius: 8,
+              //                   fontSize: 11,
+              //                 }}
+              //                 labelStyle={{ color: "#e5e7eb" }}
+              //               />
+              //               <Legend />
+              //               <Bar dataKey="max_count" name="Max count">
+              //                 {yearMonthlyData.map((entry, index) => {
+              //                   const v = entry.max_count;
+              //                   let fillColor = "#60a5fa";
+              //                   if (thresholdsActive) {
+              //                     if (v > parsedMax) fillColor = RED;
+              //                     else if (v >= parsedMin && v <= parsedMax)
+              //                       fillColor = GREEN;
+              //                     else fillColor = AMBER;
+              //                   }
+              //                   return <Cell key={`ymax-${index}`} fill={fillColor} />;
+              //                 })}
+              //               </Bar>
+              //             </BarChart>
+              //           </ResponsiveContainer>
+              //         )}
+              //       </div>
+              //       {/* NEW: details panel */}
+              //       {showYearDetails2 && thresholdsActive && (
+              //         <div style={styles.detailPanel}>
+              //           <div style={styles.detailSectionTitle}>
+              //             Alert months (max &gt; max threshold)
+              //           </div>
+              //           {getYearAlertMonths().length === 0 ? (
+              //             <div>No alert months.</div>
+              //           ) : (
+              //             getYearAlertMonths().map((m, idx) => (
+              //               <div key={`ym2-alert-${idx}`}>
+              //                 month = {m.monthLabel}, max = {m.max_count.toFixed(2)}, avg ={" "}
+              //                 {m.avg_count.toFixed(2)}, total ={" "}
+              //                 {m.total_count.toFixed(2)}
+              //               </div>
+              //             ))
+              //           )}
+
+              //           <div style={styles.detailSectionTitle}>
+              //             Safe months (avg between min &amp; max)
+              //           </div>
+              //           {getYearSafeMonths().length === 0 ? (
+              //             <div>No safe months for current thresholds.</div>
+              //           ) : (
+              //             getYearSafeMonths().map((m, idx) => (
+              //               <div key={`ym2-safe-${idx}`}>
+              //                 month = {m.monthLabel}, max = {m.max_count.toFixed(2)}, avg ={" "}
+              //                 {m.avg_count.toFixed(2)}, total ={" "}
+              //                 {m.total_count.toFixed(2)}
+              //               </div>
+              //             ))
+              //           )}
+              //         </div>
+              //       )}
+              //     </div>
+
+              //     {/* YEAR-WISE: GRAPH 3 - Month vs total_count */}
+              //     <div style={styles.graphBox}>
+              //       <div style={styles.graphTitle}>
+              //         Year overview: total crowd signal per month
+              //       </div>
+              //       <div style={styles.graphSubtitle}>
+              //         Sum of all counts for each month – useful for annual planning and capacity checks.
+              //       </div>
+
+              //       {/* NEW: details toggle */}
+              //       <button
+              //         style={styles.detailBtn}
+              //         onClick={() => setShowYearDetails3((prev) => !prev)}
+              //       >
+              //         {showYearDetails3 ? "Hide details" : "Show details"}
+              //       </button>
+
+              //       <div style={styles.graphArea}>
+              //         {yearMonthlyData.length === 0 ? (
+              //           <div style={styles.graphPlaceholder}>
+              //             Upload a CSV and pick a year to see total signal per month.
+              //           </div>
+              //         ) : (
+              //           <ResponsiveContainer width="100%" height="100%">
+              //             <LineChart data={yearMonthlyData}>
+              //               <XAxis
+              //                 dataKey="month"
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Month (1–12)",
+              //                   position: "insideBottom",
+              //                   offset: -4,
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <YAxis
+              //                 tick={{ fill: "#93c5fd", fontSize: 11 }}
+              //                 label={{
+              //                   value: "Total count (sum)",
+              //                   angle: -90,
+              //                   position: "insideLeft",
+              //                   fill: "#6b7280",
+              //                   fontSize: 11,
+              //                 }}
+              //               />
+              //               <Tooltip
+              //                 contentStyle={{
+              //                   backgroundColor: "#020617",
+              //                   border: "1px solid #1e293b",
+              //                   borderRadius: 8,
+              //                   fontSize: 11,
+              //                 }}
+              //                 labelStyle={{ color: "#e5e7eb" }}
+              //               />
+              //               <Line
+              //                 type="monotone"
+              //                 dataKey="total_count"
+              //                 stroke={CYAN}
+              //                 strokeWidth={2}
+              //                 dot={{ r: 3 }}
+              //                 activeDot={{ r: 4 }}
+              //               />
+              //             </LineChart>
+              //           </ResponsiveContainer>
+              //         )}
+              //       </div>
+              //       {/* NEW: details panel */}
+              //       {showYearDetails3 && thresholdsActive && (
+              //         <div style={styles.detailPanel}>
+              //           <div style={styles.detailSectionTitle}>
+              //             Alert months (max &gt; max threshold)
+              //           </div>
+              //           {getYearAlertMonths().length === 0 ? (
+              //             <div>No alert months.</div>
+              //           ) : (
+              //             getYearAlertMonths().map((m, idx) => (
+              //               <div key={`ym3-alert-${idx}`}>
+              //                 month = {m.monthLabel}, total ={" "}
+              //                 {m.total_count.toFixed(2)}, max ={" "}
+              //                 {m.max_count.toFixed(2)}, avg ={" "}
+              //                 {m.avg_count.toFixed(2)}
+              //               </div>
+              //             ))
+              //           )}
+
+              //           <div style={styles.detailSectionTitle}>
+              //             Safe months (avg between min &amp; max)
+              //           </div>
+              //           {getYearSafeMonths().length === 0 ? (
+              //             <div>No safe months for current thresholds.</div>
+              //           ) : (
+              //             getYearSafeMonths().map((m, idx) => (
+              //               <div key={`ym3-safe-${idx}`}>
+              //                 month = {m.monthLabel}, total ={" "}
+              //                 {m.total_count.toFixed(2)}, max ={" "}
+              //                 {m.max_count.toFixed(2)}, avg ={" "}
+              //                 {m.avg_count.toFixed(2)}
+              //               </div>
+              //             ))
+              //           )}
+              //         </div>
+              //       )}
+              //     </div>
+              //   </>
+//               )}
+//             </div>
+//           </div>
+//         </div>
+//       </div >
+//     </>
+//   );
+// }
+
+// export default Dashboard;
+
+
+
+
+

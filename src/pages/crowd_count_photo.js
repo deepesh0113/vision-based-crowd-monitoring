@@ -553,7 +553,7 @@ const OPENAPI_URL = `${API_BASE}/photo/openapi.json`;
 
     if (countResult && !countResult.error) {
       const roundedDiv10 = countResult.roundedDiv10;
-      const rawDiv10 = countResult.rawDiv10;
+      // const rawDiv10 = countResult.rawDiv10;
 
       doc.text(
         `Estimated (rounded): ${
@@ -563,22 +563,22 @@ const OPENAPI_URL = `${API_BASE}/photo/openapi.json`;
         resultY,
         { align: "left" }
       );
-      doc.text(
-        `Estimated (raw): ${
-          rawDiv10 !== null ? rawDiv10.toFixed(2) : "Not available"
-        }`,
-        x,
-        resultY + 30,
-        { align: "left" }
-      );
-      if (countResult.confidence) {
-        doc.text(
-          `Model confidence: ${countResult.confidence.toFixed(1)}%`,
-          x,
-          resultY + 60,
-          { align: "left" }
-        );
-      }
+      // doc.text(
+      //   `Estimated (raw): ${
+      //     rawDiv10 !== null ? rawDiv10.toFixed(2) : "Not available"
+      //   }`,
+      //   x,
+      //   resultY + 30,
+      //   { align: "left" }
+      // );
+      // if (countResult.confidence) {
+      //   doc.text(
+      //     `Model confidence: ${countResult.confidence.toFixed(1)}%`,
+      //     x,
+      //     resultY + 60,
+      //     { align: "left" }
+      //   );
+      // }
     }
 
     const signImg = new window.Image();
