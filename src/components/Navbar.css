@@ -3,7 +3,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 22px;
-  background: rgba(2, 6, 23, 0.75);  /* deep navy glass */
+  background: rgba(2, 6, 23, 0.75);  
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   position: sticky;
@@ -11,7 +11,7 @@
   z-index: 1000;
 }
 
-/* -------- Left (Logo) -------- */
+
 .navbar-left {
   display: flex;
   align-items: center;
@@ -38,16 +38,16 @@
 .logo-text {
   font-size: 1.35rem;
   font-weight: 700;
-  color: #38bdf8;     /* Light aqua */
+  color: #38bdf8;     
   letter-spacing: 0.6px;
 }
 
 .tagline {
   font-size: 0.8rem;
-  color: #94a3b8;     /* slate grey */
+  color: #94a3b8;    
 }
 
-/* -------- Right (Links) -------- */
+
 .navbar-links {
   display: flex;
   align-items: center;
@@ -64,7 +64,7 @@
   transition: color 0.25s ease;
 }
 
-/* Animated underline */
+
 .navbar-links a::after {
   content: "";
   position: absolute;
@@ -84,7 +84,6 @@
   color: #38bdf8;
 }
 
-/* -------- Hamburger Menu -------- */
 .navbar-hamburger {
   display: none;
   flex-direction: column;
@@ -103,7 +102,7 @@
   transition: all 0.3s ease;
 }
 
-/* Animated X */
+
 .navbar-hamburger.open div:nth-child(1) {
   transform: translateY(8px) rotate(45deg);
 }
@@ -116,7 +115,7 @@
   transform: translateY(-8px) rotate(-45deg);
 }
 
-/* -------- Mobile Menu -------- */
+
 @media (max-width: 780px) {
   .navbar-links {
     display: none;
@@ -149,7 +148,7 @@
   }
 }
 
-/* Menu reveal animation */
+
 @keyframes fadeMenu {
   from {
     opacity: 0;
