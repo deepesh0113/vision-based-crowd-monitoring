@@ -91,23 +91,23 @@ function Home() {
 
   const keyFeatures = [
     {
-      title: "Crowd Density Mapping",
-      summary: "Heatmaps and counts per zone — visualize occupancy in real time.",
-      content:
-        "Real-time crowd counts and heatmap visualization allow rapid intervention in high-risk zones, preventing stampede risk. Advanced computer vision ensures accuracy, is scalable for large venues, and runs with low latency for instant alerting.",
-    },
-    {
-      title: "Anomaly Detection",
-      summary: "Detect unusual motion patterns, fights, or loitering with adjustable sensitivity.",
-      content:
-        "AI-powered detection flags sudden motion, panic surges, fights, and loitering. Adjustable thresholds and rich analytics help organizers respond to emergencies before they escalate, saving lives and reducing property damage.",
-    },
-    {
-      title: "Camera Tamper Detection",
-      summary: "Automatic detection of lens occlusion, defocus, or vandalism.",
-      content:
-        "Automated alerts for lens blockages, focus changes, or vandalism keep surveillance systems reliable throughout any event. Machine learning distinguishes between accidental and malicious tampering for adaptive responses.",
-    },
+  title: "Crowd Density Analytics",
+  summary: "Live crowd counts and density visualization for safer movement control.",
+  content:
+    "VigilNet processes every video frame to estimate real-time crowd levels with high accuracy. The system highlights sudden increases, monitors threshold breaches, and supports zone-wise planning. This helps operators take quick action in areas that approach unsafe density.",
+},
+{
+  title: "Threshold & Alert System",
+  summary: "Automatic alerts when crowd levels cross safe limits.",
+  content:
+    "Configurable thresholds allow organizers to set the maximum safe crowd level. When the system detects that the count exceeds the limit, it triggers alerts and logs the event for review. This early warning mechanism enables timely crowd redirection and prevents dangerous congestion.",
+},
+{
+  title: "Camera Hindrance Detection",
+  summary: "Detects frozen frames, low-light issues, or blocked camera view.",
+  content:
+    "VigilNet continuously checks camera health by analyzing scene changes and brightness patterns. It flags situations like lens obstruction, extremely dark environments, or frozen video feeds. These alerts ensure uninterrupted monitoring and prevent blind spots in critical areas.",
+}
   ];
 
   return (
